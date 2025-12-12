@@ -17,7 +17,6 @@ using namespace std;
 
 constexpr int GPU_A = 0;
 constexpr int GPU_B = 1;
-constexpr int WARMUP_ITERS = 0;
 constexpr int DEFAULT_ITERS = 10000;
 constexpr int BARRIER_VAL = 0xFAFA;
 
@@ -31,14 +30,16 @@ __global__ void ping_kernel(
     uint64_t* results,
     int iters,
     uint32_t start_val,
-	volatile uint32_t* barrier_flag
+	int delay
 ) {
-	while (*barrier_flag != BARRIER_VAL)
-		;
 
     for (int i = 0; i < iters; ++i) {
         uint32_t ping = start_val + i;
         uint32_t pong = ping ^ 0xFFFFFFFF;
+
+		long delay_start = clock64();
+		while (clock64() - delay_start < delay)
+			;
 
         // t0: send ping
         results[2*i] = clock64();
@@ -60,11 +61,8 @@ __global__ void pong_kernel(
     volatile uint32_t* remote_flag,
     uint64_t* results,
     int iters,
-    uint32_t start_val,
-	volatile uint32_t* barrier_flag
+    uint32_t start_val
 ) {
-	while (*barrier_flag != BARRIER_VAL)
-		;
 
     for (int i = 0; i < iters; ++i) {
         uint32_t ping = start_val + i;
@@ -84,14 +82,14 @@ __global__ void pong_kernel(
     }
 }
 
-void run_nvlink_latency(int num_iters) {
-    int total_iters = WARMUP_ITERS + num_iters;
+void run_nvlink_latency(int num_iters, int start, int end, int delay) {
+    int total_iters = num_iters;
     uint32_t start_val = 0xC001C0DE;
 
     uint32_t *d_flag_a, *d_flag_b;
     uint64_t *d_results_a, *d_results_b;
     uint64_t *h_results_a, *h_results_b;
-	uint32_t *barrier;
+	uint32_t barrier;
 
 	/*
     int clock_khz;
@@ -99,13 +97,13 @@ void run_nvlink_latency(int num_iters) {
     double cycles_to_ns = 1000000.0 / clock_khz;
 	*/
 
-	CHECK_CUDA_ERROR(cudaMallocManaged(&barrier, sizeof(uint32_t)));
-
     CHECK_CUDA_ERROR(cudaSetDevice(GPU_A));
+	l2flush flushl2_a{};
     CHECK_CUDA_ERROR(cudaMalloc(&d_flag_a, sizeof(uint32_t)));
     CHECK_CUDA_ERROR(cudaMemset(d_flag_a, 0, sizeof(uint32_t)));
 
     CHECK_CUDA_ERROR(cudaSetDevice(GPU_B));
+	l2flush flushl2_b{};
     CHECK_CUDA_ERROR(cudaMalloc(&d_flag_b, sizeof(uint32_t)));
     CHECK_CUDA_ERROR(cudaMemset(d_flag_b, 0, sizeof(uint32_t)));
 
@@ -128,17 +126,26 @@ void run_nvlink_latency(int num_iters) {
     CHECK_CUDA_ERROR(cudaStreamCreate(&stream_b));
 
     std::cout << "NVLink Ping pong latency: " << num_iters << " samples, "
-              << WARMUP_ITERS << " warmup" << std::endl; // clock=" << clock_khz << " kHz" << std::endl;
+              << std::endl; // clock=" << clock_khz << " kHz" << std::endl;
+
+	printf("Ping address: 0x%p\n", d_results_a);
+	printf("Pong address: 0x%p\n", d_results_b);
 
     CHECK_CUDA_ERROR(cudaSetDevice(GPU_B));
-    pong_kernel<<<1, 1, 0, stream_b>>>(d_flag_b, d_flag_a, d_results_b, total_iters, start_val, barrier);
+	flushl2_b.flush(stream_b);
+    pong_kernel<<<1, 1, 0, stream_b>>>(d_flag_b, d_flag_a, d_results_b, total_iters, start_val);
     CHECK_CUDA_ERROR(cudaSetDevice(GPU_A));
-    ping_kernel<<<1, 1, 0, stream_a>>>(d_flag_b, d_flag_a, d_results_a, total_iters, start_val, barrier);
+	flushl2_a.flush(stream_a);
+    ping_kernel<<<1, 1, 0, stream_a>>>(d_flag_b, d_flag_a, d_results_a, total_iters, start_val, delay);
 
-	*barrier = BARRIER_VAL;
+	/*
+	barrier = BARRIER_VAL;
+    CHECK_CUDA_ERROR(cudaSetDevice(GPU_B));
+	CHECK_CUDA_ERROR(cudaMemcpy(barrier_d2, &barrier, sizeof(uint32_t), cudaMemcpyHostToDevice));
     CHECK_CUDA_ERROR(cudaSetDevice(GPU_A));
+	CHECK_CUDA_ERROR(cudaMemcpy(barrier_d1, &barrier, sizeof(uint32_t), cudaMemcpyHostToDevice));
+	*/
     CHECK_CUDA_ERROR(cudaSetDevice(GPU_A)); CHECK_CUDA_ERROR(cudaStreamSynchronize(stream_a));
-    CHECK_CUDA_ERROR(cudaSetDevice(GPU_B));
     CHECK_CUDA_ERROR(cudaSetDevice(GPU_B)); CHECK_CUDA_ERROR(cudaStreamSynchronize(stream_b));
 
     CHECK_CUDA_ERROR(cudaSetDevice(GPU_A));
@@ -147,7 +154,7 @@ void run_nvlink_latency(int num_iters) {
     CHECK_CUDA_ERROR(cudaMemcpy(h_results_b, d_results_b, result_bytes, cudaMemcpyDeviceToHost));
 
     std::vector<long> rtts;
-    for (int i = WARMUP_ITERS; i < total_iters; ++i) {
+    for (int i = 0; i < total_iters; ++i) {
         uint64_t t0 = h_results_a[2*i];
         uint64_t t3 = h_results_a[2*i + 1];
         uint64_t t1 = h_results_b[2*i];
@@ -161,9 +168,14 @@ void run_nvlink_latency(int num_iters) {
         rtts.push_back(rtt_cycles);
     }
 
-	print_stats(std::span(rtts), "cycels");
+	start = std::min((int)rtts.size(), start);
+	end = std::min((int)rtts.size(), end);
 
-	CHECK_CUDA_ERROR(cudaFree(barrier));
+	for (int i = start; i < end; i++) {
+		std::cout << i << ": " << rtts[i] << std::endl;
+	}
+
+	print_stats(std::span(rtts), "cycels");
 
     CHECK_CUDA_ERROR(cudaSetDevice(GPU_A));
     CHECK_CUDA_ERROR(cudaFree(d_flag_a));
@@ -179,10 +191,16 @@ void run_nvlink_latency(int num_iters) {
 int main(int argc, char* argv[]) {
     int num_iters = DEFAULT_ITERS;
     int num_gpus = 2;
+	int start = 0;
+	int end = 128;
+	int delay = 0;
 
     static struct option long_options[] = {
         {"iters", required_argument, 0, 'i'},
         {"gpus",  required_argument, 0, 'g'},
+		{"left", required_argument, 0, 'l'},
+		{"right", required_argument, 0, 'r'},
+		{"delay", required_argument, 0, 'd'},
         {0, 0, 0, 0}
     };
 
@@ -191,6 +209,9 @@ int main(int argc, char* argv[]) {
         switch (opt) {
             case 'i': num_iters = stoi(optarg); break;
             case 'g': num_gpus = stoi(optarg); break;
+            case 'l': start = stoi(optarg); break;
+            case 'e': end = stoi(optarg); break;
+            case 'd': delay = stoi(optarg); break;
         }
     }
 
@@ -206,7 +227,7 @@ int main(int argc, char* argv[]) {
     print_gpu_info(num_gpus);
     enable_p2p(num_gpus);
 
-    run_nvlink_latency(num_iters);
+    run_nvlink_latency(num_iters, start, end, delay);
 
     return 0;
 }

@@ -4,7 +4,7 @@
 size_t parse_size(const char *size_str) {
 	const char *rem = size_str;
 	size_t num = strtoull(size_str, (char **)&rem, 10);
-	int shift = 1;
+	int shift = 0;
 	switch (*rem) {
 		case 'K': case 'k':
 			shift = 10; break;
@@ -12,7 +12,7 @@ size_t parse_size(const char *size_str) {
 			shift = 20; break;
 		case 'G': case 'g':
 			shift = 30; break;
-		default: shift = 1;
+		default: shift = 0;
 	}
 	return num << shift;
 }

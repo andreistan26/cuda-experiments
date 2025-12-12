@@ -86,6 +86,25 @@ __global__ void copy_kernel(BufferPair *iov, size_t size) {
 }
 
 template <typename T>
+__global__ void serial_copy_kernel(BufferPair *iov, size_t size) {
+    size_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+    size_t thread_count = gridDim.x * blockDim.x;
+
+    for (int iov_i = 0; iov_i < size; iov_i++) {
+        size_t el_count = (iov[iov_i].size + sizeof(T) - 1) / sizeof(T);
+		size_t chunk_count = el_count / thread_count;
+		size_t el_start = chunk_count * idx;
+		size_t el_end = min((chunk_count + 1) * idx, el_count);
+        T *src = (T *)iov[iov_i].src;
+        T *dst = (T *)iov[iov_i].dest;
+
+        for (size_t i = el_start; i < el_end; i += 1) {
+            dst[i] = src[i];
+        }
+    }
+}
+
+template <typename T>
 __global__ void tma_memcpy(BufferPair *iov, size_t size) {
 
 }
@@ -98,6 +117,7 @@ struct FlowDescriptor {
 enum FlowAlgo {
     SM_SIMPLE,
     SM_UNROLL,
+    SM_SERIAL,
     TMA,
     CE
 };
@@ -106,6 +126,7 @@ std::string algo_to_string(FlowAlgo algo) {
     switch(algo) {
         case SM_SIMPLE: return "SM_SIMPLE";
         case SM_UNROLL: return "SM_UNROLL";
+        case SM_SERIAL: return "SM_SERIAL";
         case TMA: return "TMA";
         case CE: return "CE";
         default: return "UNKNOWN";
@@ -115,6 +136,7 @@ std::string algo_to_string(FlowAlgo algo) {
 FlowAlgo parse_algo_string(const std::string& str) {
     if (str == "SM_SIMPLE" || str == "simple") return SM_SIMPLE;
     if (str == "SM_UNROLL" || str == "sm") return SM_UNROLL;
+    if (str == "SM_SERIAL" || str == "serial") return SM_SERIAL;
     if (str == "TMA") return TMA;
     if (str == "CE") return CE;
     std::cerr << "Unknown Algo String: " << str << ", defaulting to CE" << std::endl;
@@ -210,6 +232,19 @@ struct SMSimpleFlow : public Flow {
 
         dim3 gridDim(grid_size, 1, 1);
         dim3 blockDim(threadsPerBlock, 1, 1);
+        copy_kernel<int><<<gridDim, blockDim, 0, stream>>>(d_iov, iov_size);
+    }
+};
+
+struct SMSerialFlow : public Flow {
+    SMSerialFlow(FlowConfig config) : Flow(config) {}
+
+    void __launch_copy_kernel() {
+        auto buf_size = iov[0].size;
+        int grid_size = std::min((int)sm_count, (int)((buf_size + threadsPerBlock - 1) / threadsPerBlock));
+
+        dim3 gridDim(grid_size, 1, 1);
+        dim3 blockDim(threadsPerBlock, 1, 1);
         copy_kernel<char><<<gridDim, blockDim, 0, stream>>>(d_iov, iov_size);
     }
 };
@@ -245,6 +280,8 @@ std::unique_ptr<Flow> to_flow(FlowConfig cfg) {
         return std::make_unique<CEFlow>(cfg);
     case SM_SIMPLE:
         return std::make_unique<SMSimpleFlow>(cfg);
+    case SM_SERIAL:
+        return std::make_unique<SMSerialFlow>(cfg);
     case SM_UNROLL:
         return std::make_unique<SMUnrolledFlow>(cfg);
     default:

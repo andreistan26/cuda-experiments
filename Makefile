@@ -1,7 +1,10 @@
 NVFLAGS = -arch=compute_90 --gpu-code=sm_90  -g -O2 -lineinfo -lcuda -code=compute_90
 CFLAGS = -Iinclude 
 
-all: flowgen latency pingpong
+all: flowgen latency pingpong burst
+
+burst: burst.cu
+	nvcc $(CFLAGS) -std=c++20 $(NVFLAGS) $^ -o $@
 
 flowgen: flowgen.cu
 	nvcc $(CFLAGS) -std=c++17 $(NVFLAGS) $^ -o $@
