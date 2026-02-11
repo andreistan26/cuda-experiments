@@ -1,0 +1,66 @@
+[
+	{
+		"src_gpu": 2,
+		"dst_gpu": 1,
+		"buffer_size": "1g",
+		"iov_size": 1,
+		"sm_count": 20,
+		"type": "SM_UNROLL"
+	},
+	{
+		"src_gpu": 3,
+		"dst_gpu": 1,
+		"buffer_size": "1g",
+		"iov_size": 1,
+		"sm_count": 20,
+		"type": "SM_UNROLL"
+	},
+	{
+		"src_gpu": 4,
+		"dst_gpu": 1,
+		"buffer_size": "1g",
+		"iov_size": 1,
+		"sm_count": 20,
+		"type": "SM_UNROLL"
+	},
+	{
+		"src_gpu": 5,
+		"dst_gpu": 1,
+		"buffer_size": "1g",
+		"iov_size": 1,
+		"sm_count": 20,
+		"type": "SM_UNROLL"
+	},
+	{
+		"src_gpu": 0,
+		"dst_gpu": 1,
+		"buffer_size": "1g",
+		"iov_size": 1,
+		"sm_count": 20,
+		"type": "SM_UNROLL"
+	},
+	{
+		"src_gpu": 6,
+		"dst_gpu": 1,
+		"buffer_size": "1g",
+		"iov_size": 1,
+		"sm_count": 20,
+		"type": "SM_UNROLL"
+	},
+	{
+		"src_gpu": 7,
+		"dst_gpu": 1,
+		"buffer_size": "1g",
+		"iov_size": 1,
+		"sm_count": 20,
+		"type": "SM_UNROLL"
+	},
+	{
+		"src_gpu": 2,
+		"dst_gpu": 3,
+		"buffer_size": "1g",
+		"iov_size": 1,
+		"sm_count": 20,
+		"type": "CE"
+	}
+]
