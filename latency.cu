@@ -37,35 +37,8 @@ template <> struct ptx_load_suffix<long>   { static constexpr const char value[]
 template <> struct ptx_load_suffix<uint4>  { static constexpr const char value[] = ".v4.i32";  };
 
 
-struct AlignedBuffer {
-    void* raw_ptr = nullptr;
-    void* aligned_ptr = nullptr;
-    size_t total_allocated = 0;
-	int dev_idx;
-
-    explicit AlignedBuffer(size_t size, size_t alignment) {
-		CHECK_CUDA_ERROR(cudaGetDevice(&dev_idx));
-        total_allocated = size + alignment;
-        CHECK_CUDA_ERROR(cudaMalloc(&raw_ptr, total_allocated));
-        CHECK_CUDA_ERROR(cudaMemset(raw_ptr, 0, total_allocated));
-
-        uintptr_t raw_addr = (uintptr_t)raw_ptr;
-        uintptr_t aligned_addr = (raw_addr + alignment - 1) & ~(alignment - 1);
-        aligned_ptr = (void*)aligned_addr;
-    }
-
-    ~AlignedBuffer() {
-        if (raw_ptr) {
-			CHECK_CUDA_ERROR(cudaSetDevice(dev_idx));
-            CHECK_CUDA_ERROR(cudaFree(raw_ptr));
-            raw_ptr = nullptr;
-        }
-    }
-};
-
-
 /*
-	read from peer memory and check the latency
+	Each thread in a grid will read one element
 
 	dest: device accessible buffer
 	results: where each thread will write read latency
@@ -96,6 +69,7 @@ __global__ void timed_reads(T *src, long *results, size_t size, size_t stride) {
 	}
 }
 
+// A single thread will read the whole buffer
 template <LatencyLoadType T>
 __global__ void stride_timed_reads(T *src, long *results, long *tid, size_t size) {
 	uint idx = blockDim.x * blockIdx.x + threadIdx.x;
@@ -190,18 +164,16 @@ Mode str_to_mode(std::string mode) {
 }
 
 template <LatencyLoadType T>
-void run_latency(size_t size, int num_iters, size_t stride, Mode mode, size_t alignment, int start, int end) {
+void run_latency(size_t size, int num_iters, size_t stride, Mode mode, size_t alignment, int start, int end, int src_gpu, int reader_gpu) {
 	std::cout << "Running latency test " << " with size " << size << " bytes " 
 			  << "Mode " << mode_to_str(mode) << std::endl;
 
-	constexpr int reader_gpu = 1;
-	constexpr int source_gpu = 0;
 
 	std::vector<long> results(size / stride);
 	std::vector<long> tids(size / stride);
 	long *d_results, *d_tid;
 
-	CHECK_CUDA_ERROR(cudaSetDevice(source_gpu));
+	CHECK_CUDA_ERROR(cudaSetDevice(src_gpu));
 	AlignedBuffer buffer(size, alignment);
 	CHECK_CUDA_ERROR(cudaDeviceSynchronize());
 
@@ -264,6 +236,7 @@ int main(int argc, char* argv[]) {
 	size_t alignment = 1;
 	Mode mode;
 	int start = 0, end = 0;
+	int reader_gpu = 0, src_gpu = 1;
 
     static struct option long_options[] = {
         {"size", required_argument, 0, 's'},
@@ -273,6 +246,8 @@ int main(int argc, char* argv[]) {
 		{"mode", required_argument, 0, 'm'},
 		{"left", required_argument, 0, 'l'},
 		{"right", required_argument, 0, 'r'},
+		{"from", required_argument, 0, 'f'},
+		{"dest", required_argument, 0, 'd'},
 		//{"dtype", required_argument, 0, 'd'},
         {0, 0, 0, 0}
     };
@@ -288,6 +263,8 @@ int main(int argc, char* argv[]) {
 			case 't': stride = parse_size(optarg); break;
 			case 'a': alignment = parse_size(optarg); break;
 			case 'm': mode = str_to_mode(optarg); break;
+			case 'f': src_gpu = stoi(optarg); break;
+			case 'd': reader_gpu = stoi(optarg); break;
         }
     }
 
@@ -299,7 +276,8 @@ int main(int argc, char* argv[]) {
 	enable_p2p(device_count);
 	if (mode == INTER_READS) stride = sizeof(uint);
 
-	run_latency<long>(size, num_iters, stride, mode, alignment, start, end);
+
+	run_latency<long>(size, num_iters, stride, mode, alignment, start, end, src_gpu, reader_gpu);
 
     return 0;
 }
