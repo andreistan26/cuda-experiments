@@ -1,4 +1,5 @@
-NVFLAGS = -arch=compute_90,compute_80 --gpu-code=sm_90,sm_80  -g -O2 -lineinfo -lcuda -code=compute_90,compute_80
+NVFLAGS = -g -O2 -lineinfo -lcuda -gencode arch=compute_80,code=sm_80 -gencode arch=compute_90,code=sm_90 \
+
 CFLAGS = -Iinclude 
 
 all: flowgen latency pingpong burst

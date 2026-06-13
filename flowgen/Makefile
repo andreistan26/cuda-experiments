@@ -1,5 +1,5 @@
 NVCC      ?= nvcc
-NVCCFLAGS ?= -std=c++17 -O2 -Iinclude
+NVCCFLAGS ?= -std=c++17 -O2 -I../include
 LDFLAGS   ?= -lcuda
 
 GENCODE   ?= -gencode arch=compute_80,code=sm_80 \

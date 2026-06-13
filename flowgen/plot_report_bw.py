@@ -4,7 +4,7 @@ import sys
 
 def main():
     if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <flowgen-stats.json>")
+        print(f"Usage: {sys.argv[0]} <flowgen-stats.json> [<output-fig.png>]")
         exit(1)
     results = ""
     with open(sys.argv[1], "r") as f:
@@ -16,6 +16,8 @@ def main():
         src = flow["src"]
         dst = flow["dst"]
         buffer_size = flow["buffer_size"]
+        driver = flow["type"]
+        if driver.find("SM") != -1: driver = "SM"
         runs = flow["iterations"]
         print(flow)
         flow_ts = []
@@ -31,12 +33,13 @@ def main():
         ax.set_yscale("log")
         ax.plot(flow_ts, flow_bw,
                  linewidth=3,
-                 label=f"{src}->{dst} bs={buffer_size}")
+                 label=f"{src}->{dst} bs={buffer_size} ({driver})")
         ax.set_xlabel("Time(ms)", fontsize="x-large")
         ax.set_ylabel("Bandwidth(GB/s)", fontsize="x-large")
     ax.legend(fontsize="x-large")
     ax.grid()
     ax.grid(which="minor", color="0.9")
+    if len(sys.argv) >= 3: plt.savefig(sys.argv[2])
     plt.show()
 
 if __name__ == "__main__":

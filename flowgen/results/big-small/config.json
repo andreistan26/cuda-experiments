@@ -1,0 +1,12 @@
+[
+    {
+        "src_gpu": 1, "dst_gpu": 0,
+        "buffer_size": "64k", "type": "spaced", "sm_count": 10,
+        "iters": 600, "start_us": 0, "gap_us": 10
+    },
+    {
+        "src_gpu": 1, "dst_gpu": 0,
+        "buffer_size": "256m", "type": "CE",
+        "iters": 2, "start_us": 800, "gap_us": 1000
+    }
+]
