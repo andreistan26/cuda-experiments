@@ -11,7 +11,7 @@ def main():
         results = json.load(f)
     print(results)
     flows = results["flows"]
-    _, ax = plt.subplots()
+    _, ax = plt.subplots(figsize=(12, 8))
     for flow in flows:
         src = flow["src"]
         dst = flow["dst"]
