@@ -36,7 +36,7 @@ def main():
                  label=f"{src}->{dst} bs={buffer_size} ({driver})")
         ax.set_xlabel("Time(ms)", fontsize="x-large")
         ax.set_ylabel("Bandwidth(GB/s)", fontsize="x-large")
-    ax.legend(fontsize="x-large")
+    ax.legend(fontsize="large")
     ax.grid()
     ax.grid(which="minor", color="0.9")
     if len(sys.argv) >= 3: plt.savefig(sys.argv[2])
