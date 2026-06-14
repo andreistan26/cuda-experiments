@@ -1,7 +1,7 @@
 [
     {
         "src_gpu": 1, "dst_gpu": 0,
-        "buffer_size": "64k", "type": "spaced", "sm_count": 20,
+        "buffer_size": "256k", "type": "spaced", "sm_count": 20,
         "iters": 600, "start_us": 1100, "gap_us": 10
     },
     {
