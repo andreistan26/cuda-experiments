@@ -1,9 +1,7 @@
 # Experiments
 
-## Flowgen
-
-- Running a input config
+## NVLink Tracer
 
 ```bash
-./flowgen --w 1 --i 3 --g 8 --config-json flowgen_input/incast_rev.json --output-json > result.json
+python3 nvlink_tracer.py ./experiment [experiment-opts]
 ```
