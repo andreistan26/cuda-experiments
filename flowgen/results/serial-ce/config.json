@@ -1,0 +1,112 @@
+[
+    {
+        "src_gpu": 1, "dst_gpu": 0,
+        "buffer_size": "1k", "type": "CE",
+        "iters": 10, "start_us": 0
+    },
+    {
+        "src_gpu": 1, "dst_gpu": 0,
+        "buffer_size": "4k", "type": "CE",
+        "iters": 10, "start_us": 600
+    },
+    {
+        "src_gpu": 1, "dst_gpu": 0,
+        "buffer_size": "16k", "type": "CE",
+        "iters": 10, "start_us": 1000
+    },
+    {
+        "src_gpu": 1, "dst_gpu": 0,
+        "buffer_size": "64k", "type": "CE",
+        "iters": 10, "start_us": 1500
+    },
+    {
+        "src_gpu": 1, "dst_gpu": 0,
+        "buffer_size": "256k", "type": "CE",
+        "iters": 10, "start_us": 2000
+    },
+    {
+        "src_gpu": 1, "dst_gpu": 0,
+        "buffer_size": "1m", "type": "CE",
+        "iters": 10, "start_us": 2500
+    },
+    {
+        "src_gpu": 1, "dst_gpu": 0,
+        "buffer_size": "4m", "type": "CE",
+        "iters": 10, "start_us": 3000
+    },
+    {
+        "src_gpu": 1, "dst_gpu": 0,
+        "buffer_size": "16m", "type": "CE",
+        "iters": 10, "start_us": 5000
+    },
+    {
+        "src_gpu": 1, "dst_gpu": 0,
+        "buffer_size": "64m", "type": "CE",
+        "iters": 10, "start_us": 10000
+    },
+    {
+        "src_gpu": 1, "dst_gpu": 0,
+        "buffer_size": "256m", "type": "CE",
+        "iters": 10, "start_us": 100000
+    },
+    {
+        "src_gpu": 1, "dst_gpu": 0,
+        "buffer_size": "1g", "type": "CE",
+        "iters": 10, "start_us": 1000000
+    },
+    {
+        "src_gpu": 3, "dst_gpu": 2,
+        "buffer_size": "1k", "type": "spaced", "sm_count": 80,
+        "iters": 10, "strrt_us": 0
+    },
+    {
+        "src_gpu": 3, "dst_gpu": 2,
+        "buffer_size": "4k", "type": "spaced", "sm_count": 80,
+        "iters": 10, "start_us": 600
+    },
+    {
+        "src_gpu": 3, "dst_gpu": 2,
+        "buffer_size": "16k", "type": "spaced", "sm_count": 80,
+        "iters": 10, "start_us": 1000
+    },
+    {
+        "src_gpu": 3, "dst_gpu": 2,
+        "buffer_size": "64k", "type": "spaced", "sm_count": 80,
+        "iters": 10, "start_us": 1500
+    },
+    {
+        "src_gpu": 3, "dst_gpu": 2,
+        "buffer_size": "256k", "type": "spaced", "sm_count": 80,
+        "iters": 10, "start_us": 2000
+    },
+    {
+        "src_gpu": 3, "dst_gpu": 2,
+        "buffer_size": "1m", "type": "spaced", "sm_count": 80,
+        "iters": 10, "start_us": 2500
+    },
+    {
+        "src_gpu": 3, "dst_gpu": 2,
+        "buffer_size": "4m", "type": "spaced", "sm_count": 80,
+        "iters": 10, "start_us": 3000
+    },
+    {
+        "src_gpu": 3, "dst_gpu": 2,
+        "buffer_size": "16m", "type": "spaced", "sm_count": 80,
+        "iters": 10, "start_us": 5000
+    },
+    {
+        "src_gpu": 3, "dst_gpu": 2,
+        "buffer_size": "64m", "type": "spaced", "sm_count": 80,
+        "iters": 10, "start_us": 10000
+    },
+    {
+        "src_gpu": 3, "dst_gpu": 2,
+        "buffer_size": "256m", "type": "spaced", "sm_count": 80,
+        "iters": 10, "start_us": 100000
+    },
+    {
+        "src_gpu": 3, "dst_gpu": 2,
+        "buffer_size": "1g", "type": "spaced", "sm_count": 80,
+        "iters": 10, "start_us": 1000000
+    }
+]

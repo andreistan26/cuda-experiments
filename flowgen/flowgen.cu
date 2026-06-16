@@ -157,7 +157,7 @@ __global__ void spaced_striding_kernel(BufferPair *iov, size_t size, int iters,
     grid.sync();
     for (int it = 0; it < iters; ++it) {
         if (leader) iter_ts[2 * it] = d_globaltimer();
-        //grid.sync();
+        grid.sync();
 
         striding_copy_body<T>(iov, size, from, totalThreadCount);
 
