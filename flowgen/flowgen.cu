@@ -1,11 +1,11 @@
 #include <iostream>
 #include <vector>
+#include <thread>
 #include <string>
 #include <chrono>
 #include <iomanip>
 #include <fstream>
 #include <getopt.h>
-#include <thread>
 #include <mutex>
 #include <condition_variable>
 #include <functional>
@@ -16,6 +16,8 @@
 #include <algorithm>
 #include <limits>
 #include <deque>
+#include <atomic>
+#include <stdlib.h>
 
 #include <cuda_runtime.h>
 #include <cuda.h>
@@ -45,6 +47,12 @@ using benchclock = std::chrono::steady_clock;
 static double us_now() {
     return std::chrono::duration<double, std::micro>(benchclock::now().time_since_epoch()).count();
 }
+
+static double ns_now() {
+    return std::chrono::duration<double, std::nano>(benchclock::now().time_since_epoch()).count();
+}
+
+bool debug = getenv("DEBUG") != nullptr;
 
 /* barrier that runs a completion function in the last arriving thread
  * before releasing everyone (used to capture the common epoch) */
@@ -217,7 +225,8 @@ enum FlowAlgo {
     SM_SERIAL,
     SM_SPACED,
     TMA,
-    CE
+    CE,
+    CC_CE
 };
 
 std::string algo_to_string(FlowAlgo algo) {
@@ -228,6 +237,7 @@ std::string algo_to_string(FlowAlgo algo) {
         case SM_SPACED: return "SM_SPACED";
         case TMA: return "TMA";
         case CE: return "CE";
+		case CC_CE: return "CC_CE";
         default: return "UNKNOWN";
     }
 }
@@ -238,7 +248,8 @@ FlowAlgo parse_algo_string(const std::string& str) {
     if (str == "SM_SERIAL" || str == "serial") return SM_SERIAL;
     if (str == "SM_SPACED" || str == "spaced") return SM_SPACED;
     if (str == "TMA") return TMA;
-    if (str == "CE") return CE;
+	if (str == "CE" || str == "ce") return CE;
+    if (str == "CC_CE" || str == "cc_ce") return CC_CE;
     std::cerr << "Unknown Algo String: " << str << ", defaulting to CE" << std::endl;
     return CE;
 }
@@ -269,6 +280,7 @@ struct Flow {
     size_t iov_size;
     int sm_count;
     FlowAlgo type;
+	size_t buffer_size;
 
     double start_us;
     int iters;
@@ -277,8 +289,7 @@ struct Flow {
 
     Flow(FlowConfig config)
         : desc(config.desc), iov_size(config.iov_size), sm_count(config.sm_count), type(config.type),
-          start_us(config.start_us), iters(config.iters), gap_us(config.gap_us) {
-        auto buffer_size = config.buffer_size;
+          start_us(config.start_us), iters(config.iters), gap_us(config.gap_us), buffer_size(config.buffer_size) {
         iov = new BufferPair[iov_size];
         for (int i = 0; i < iov_size; i++) {
             CHECK_CUDA_ERROR(cudaSetDevice(desc.src_gpu));
@@ -299,7 +310,7 @@ struct Flow {
 
     virtual void __launch_copy_kernel() = 0;
 
-    void launch_copy_kernel() {
+    virtual void launch_copy_kernel() {
         CHECK_CUDA_ERROR(cudaSetDevice(desc.src_gpu));
         CHECK_CUDA_ERROR(cudaEventRecord(start_event, stream));
         __launch_copy_kernel();
@@ -311,6 +322,8 @@ struct Flow {
      * collect_samples instead of timing each iteration with CUDA events. */
     virtual bool persistent() const { return false; }
     virtual void collect_samples(double base_launch_us) {}
+    virtual cudaError_t query_complete() { return cudaEventQuery(stop_event); }
+    virtual void wait_idle() {}
 
     /* persistent kernels are launched up front and park in-kernel waiting for
      * signal_start(); the host signals at the scheduled time, keeping the
@@ -334,6 +347,230 @@ struct Flow {
 
         delete[] iov;
     }
+};
+struct CC_CEFlow : public Flow {
+	size_t cwnd;
+    CC_CEFlow(FlowConfig config) : Flow(config) {
+		if (iov_size != 1) {
+			std::cerr << "CC_CE does not support --kiter/iov_size != 1 yet" << std::endl;
+			exit(1);
+		}
+
+    	cwnd = kCwndStartSz;
+		CHECK_CUDA_ERROR(cudaSetDevice(desc.src_gpu));
+		for (int i = 0; i < kEventPoolSz; i++) {
+			cudaEvent_t ev;
+			CHECK_CUDA_ERROR(cudaEventCreate(&ev));
+			free_events.push_back(ev);
+		}
+		CHECK_CUDA_ERROR(cudaEventCreate(&iter_start_event));
+		CHECK_CUDA_ERROR(cudaEventCreate(&iter_end_event));
+	}
+
+	~CC_CEFlow() override {
+		if (worker.joinable())
+			worker.join();
+		CHECK_CUDA_ERROR(cudaSetDevice(desc.src_gpu));
+		for (auto ev : free_events)
+			CHECK_CUDA_ERROR(cudaEventDestroy(ev));
+		CHECK_CUDA_ERROR(cudaEventDestroy(iter_start_event));
+		CHECK_CUDA_ERROR(cudaEventDestroy(iter_end_event));
+	}
+
+	bool persistent() const override { return true; }
+
+	void launch_copy_kernel() override {
+		wait_idle();
+
+		start.store(false, std::memory_order_release);
+		worker_done.store(false, std::memory_order_release);
+		pending_samples.clear();
+		latencies_ns.clear();
+		inflight_chunks.clear();
+		inflight_size = 0;
+    	cwnd = kCwndStartSz;
+		worker = std::thread(&CC_CEFlow::run, this);
+	}
+
+	void signal_start() override {
+		start.store(true, std::memory_order_release);
+	}
+
+	cudaError_t query_complete() override {
+		return worker_done.load(std::memory_order_acquire) ? cudaSuccess : cudaErrorNotReady;
+	}
+
+	void wait_idle() override {
+		if (worker.joinable())
+			worker.join();
+	}
+
+	void collect_samples(double base_launch_us) override {
+		samples.insert(samples.end(), pending_samples.begin(), pending_samples.end());
+	}
+
+    void __launch_copy_kernel() override {}
+
+private:
+	double serializationDelayNs(size_t size) {
+		return size / kLinkSpeed_Bpns;
+	}
+
+	double targetDelayNs(size_t size) {
+		return kLaunchOverhead_ns + serializationDelayNs(size);
+	}
+
+	size_t available_window() const {
+		if (cwnd <= inflight_size)
+			return 0;
+		return cwnd - inflight_size;
+	}
+
+	void send(size_t size, size_t offset) {
+		auto start_event = free_events.front();
+		free_events.pop_front();
+		auto end_event = free_events.front();
+		free_events.pop_front();
+
+
+		CHECK_CUDA_ERROR(cudaEventRecord(start_event, stream));
+		CHECK_CUDA_ERROR(cudaMemcpyPeerAsync(
+			(char *)iov[0].dest + offset,
+			desc.dst_gpu,
+			(char *)iov[0].src + offset,
+			desc.src_gpu,
+			size,
+			stream
+		));
+		CHECK_CUDA_ERROR(cudaEventRecord(end_event, stream));
+		inflight_chunks.push_back(InflightChunk{
+			.start = start_event,
+			.end = end_event,
+			.query_time = ns_now() + targetDelayNs(size) - 1000, // start polling 1us before expected completion time
+			.size = size,
+		});
+		inflight_size += size;
+	}
+
+	void update_on_ack(size_t size, double latency_ns) {
+		latencies_ns.push_back(latency_ns);
+
+		double target_delay = targetDelayNs(size);
+		double queueing_delay = latency_ns - target_delay;
+		if (debug)
+			std::cout
+				<< "On ACK :\n" 
+				<< "\ttarget latency = " << target_delay << "\n"
+				<< "\tactual latency = " << latency_ns << "\n"
+				<< "\tqueueing delay = " << queueing_delay << "\n"
+				<< "\tsize           = " << size << "\n"
+				<< "\tcwnd           = " << cwnd << "\n"
+				<< "\tinflight       = " << inflight_size << "\n";
+
+		if (queueing_delay > 0.15 * target_delay)
+			cwnd = std::max(cwnd / 2, (size_t)kMinChunkSz);
+		else
+			cwnd = std::min(cwnd + cwnd * 0.1, (double)kMaxChunkSz);
+
+		inflight_size -= size;
+	}
+
+	// Has to be done with queueing delay
+	void check_inflight(double now, bool force = false) {
+		float ms;
+		while (!inflight_chunks.empty()) {
+			auto front = inflight_chunks.front();
+			if (!force && front.query_time > now)
+				break;
+
+			cudaError_t err = cudaEventQuery(front.end);
+			if (err == cudaErrorNotReady)
+				break;
+			CHECK_CUDA_ERROR(err);
+
+			inflight_chunks.pop_front();
+			CHECK_CUDA_ERROR(cudaEventElapsedTime(&ms, front.start, front.end));
+			double latency_ns = ms * 1e6;
+			update_on_ack(front.size, latency_ns);
+			free_events.push_back(front.start);
+			free_events.push_back(front.end);
+		}
+	}
+
+	void run() {
+		CHECK_CUDA_ERROR(cudaSetDevice(desc.src_gpu));
+		while (!start.load(std::memory_order_acquire))
+			;//std::this_thread::yield();
+
+		double next_iter_ns = ns_now();
+		for (int iter = 0; iter < iters; ++iter) {
+			while (true) {
+				double now = ns_now();
+				check_inflight(now);
+				if (now >= next_iter_ns)
+					break;
+			}
+
+			CHECK_CUDA_ERROR(cudaEventRecord(iter_start_event, stream));
+			double launch_us = us_now();
+			size_t offset = 0;
+			while (offset < buffer_size) {
+				double now = ns_now();
+				check_inflight(now);
+				size_t window = available_window();
+				size_t remaining = buffer_size - offset;
+				if (!can_send() || window == 0 || (remaining >= kMinChunkSz && window < kMinChunkSz)) {
+					//std::this_thread::yield();
+					continue;
+				}
+
+				size_t current_chunk = std::min(window, remaining);
+				send(current_chunk, offset);
+				offset += current_chunk;
+			}
+
+			CHECK_CUDA_ERROR(cudaEventRecord(iter_end_event, stream));
+			CHECK_CUDA_ERROR(cudaEventSynchronize(iter_end_event));
+			check_inflight(ns_now(), true);
+
+			float ms = 0;
+			CHECK_CUDA_ERROR(cudaEventElapsedTime(&ms, iter_start_event, iter_end_event));
+			pending_samples.push_back({launch_us, (double)ms * 1000.0});
+			next_iter_ns = ns_now() + gap_us * 1000.0;
+		}
+
+		worker_done.store(true, std::memory_order_release);
+	}
+
+	bool can_send() {
+		return inflight_chunks.size() < maxQueuedChunks;
+	}
+
+	static constexpr long kLaunchOverhead_ns = 4700;
+	static constexpr long kLinkSpeed = 400 * 1e9; // H100/H200 400 GB/s
+	static constexpr long kLinkSpeed_Bpns = 400; // H100/H200 400 GB/s
+	static constexpr long kEventPoolSz = 16 * 2; // we assume 16 queued requests
+	static constexpr long kMinChunkSz = 256 * 1024; // 300 KB (with CE ~50GB/s) which is the fair bw share on h100/h200
+	static constexpr long kMaxChunkSz = 8 * 1024 * 1024; // 300 KB (with CE ~50GB/s) which is the fair bw share on h100/h200
+	static constexpr long kCwndStartSz = 8 * 1024 * 1024; // 300 KB (with CE ~50GB/s) which is the fair bw share on h100/h200
+	static constexpr long maxQueuedChunks = 2;
+
+	struct InflightChunk {
+		cudaEvent_t start, end;
+		double query_time; // To lower overhead of cudaEventQuery()
+		size_t size; // size of the chunk
+	};
+
+	std::thread worker;
+	cudaEvent_t iter_start_event, iter_end_event;
+	std::deque<cudaEvent_t> free_events;
+	std::deque<InflightChunk> inflight_chunks;
+	std::vector<double> latencies_ns;
+	std::vector<IterSample> pending_samples;
+	size_t inflight_size{0};
+
+	std::atomic<bool> start{false};
+	std::atomic<bool> worker_done{false};
 };
 
 struct CEFlow : public Flow {
@@ -465,6 +702,12 @@ struct SMSpacedFlow : public Flow {
 
 std::unique_ptr<Flow> to_flow(FlowConfig cfg) {
     switch (cfg.type) {
+    case CC_CE:
+		if (cfg.iov_size != 1) {
+			std::cerr << "CC_CE does not support --kiter/iov_size != 1 yet" << std::endl;
+			exit(1);
+		}
+        return std::make_unique<CC_CEFlow>(cfg);
     case CE:
         return std::make_unique<CEFlow>(cfg);
     case SM_SIMPLE:
@@ -789,6 +1032,8 @@ void gpu_worker(int gpu, vector<Flow*> flows, int warmup_iters,
         }
         CHECK_CUDA_ERROR(cudaSetDevice(gpu));
         CHECK_CUDA_ERROR(cudaDeviceSynchronize());
+        for (auto *f : flows)
+            f->wait_idle();
     }
 
     {
@@ -852,7 +1097,7 @@ void gpu_worker(int gpu, vector<Flow*> flows, int warmup_iters,
 
         for (size_t i = 0; i < inflight.size();) {
             ScheduledFlow *s = inflight[i];
-            cudaError_t q = cudaEventQuery(s->flow->stop_event);
+            cudaError_t q = s->flow->query_complete();
             if (q == cudaErrorNotReady) {
                 ++i;
                 continue;
