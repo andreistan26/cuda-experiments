@@ -34,7 +34,7 @@ def main():
         ax.plot(flow_ts, flow_bw,
                  linewidth=3,
                  label=f"{src}->{dst} bs={buffer_size} ({driver})")
-        ax.set_xlabel("Time(ms)", fontsize="x-large")
+        ax.set_xlabel("Time(us)", fontsize="x-large")
         ax.set_ylabel("Bandwidth(GB/s)", fontsize="x-large")
     ax.legend(fontsize="large")
     ax.grid()

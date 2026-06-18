@@ -40,7 +40,9 @@ using uint = unsigned int;
 int sync_device = 0;
 constexpr int threadsPerBlock = 512;
 
-using benchclock = std::chrono::steady_clock;
+using benchclock = std::chrono::high_resolution_clock;
+#define likely(x)       __builtin_expect(!!(x), 1)
+#define unlikely(x)     __builtin_expect(!!(x), 0)
 
 /* absolute host time in microseconds; workers record raw timestamps and the
  * report is normalized afterwards by subtracting the earliest launch time */
@@ -49,10 +51,11 @@ static double us_now() {
 }
 
 static double ns_now() {
-    return std::chrono::duration<double, std::nano>(benchclock::now().time_since_epoch()).count();
+    return std::chrono::duration<size_t, std::nano>(benchclock::now().time_since_epoch()).count();
 }
 
 bool debug = getenv("DEBUG") != nullptr;
+bool nsys = getenv("NSYS") != nullptr;
 
 /* barrier that runs a completion function in the last arriving thread
  * before releasing everyone (used to capture the common epoch) */
@@ -157,7 +160,7 @@ __global__ void spaced_striding_kernel(BufferPair *iov, size_t size, int iters,
     grid.sync();
     for (int it = 0; it < iters; ++it) {
         if (leader) iter_ts[2 * it] = d_globaltimer();
-        grid.sync();
+        //grid.sync();
 
         striding_copy_body<T>(iov, size, from, totalThreadCount);
 
@@ -356,7 +359,7 @@ struct CC_CEFlow : public Flow {
 			exit(1);
 		}
 
-    	cwnd = kCwndStartSz;
+    	cwnd = kStartCwndSz;
 		CHECK_CUDA_ERROR(cudaSetDevice(desc.src_gpu));
 		for (int i = 0; i < kEventPoolSz; i++) {
 			cudaEvent_t ev;
@@ -388,7 +391,7 @@ struct CC_CEFlow : public Flow {
 		latencies_ns.clear();
 		inflight_chunks.clear();
 		inflight_size = 0;
-    	cwnd = kCwndStartSz;
+    	cwnd = kStartCwndSz;
 		worker = std::thread(&CC_CEFlow::run, this);
 	}
 
@@ -417,7 +420,8 @@ private:
 	}
 
 	double targetDelayNs(size_t size) {
-		return kLaunchOverhead_ns + serializationDelayNs(size);
+		size_t additional_oh_ns = nsys ? 3000 : 0;
+		return kLaunchOverhead_ns + serializationDelayNs(size) + additional_oh_ns;
 	}
 
 	size_t available_window() const {
@@ -446,46 +450,52 @@ private:
 		inflight_chunks.push_back(InflightChunk{
 			.start = start_event,
 			.end = end_event,
-			.query_time = ns_now() + targetDelayNs(size) - 1000, // start polling 1us before expected completion time
+			.query_time = ns_now() + targetDelayNs(size) - 2000, // start polling 1us before expected completion time
 			.size = size,
 		});
-		inflight_size += size;
+		//inflight_size += size;
 	}
 
 	void update_on_ack(size_t size, double latency_ns) {
-		latencies_ns.push_back(latency_ns);
+		//latencies_ns.push_back(latency_ns);
 
 		double target_delay = targetDelayNs(size);
 		double queueing_delay = latency_ns - target_delay;
-		if (debug)
+		double actual_rtt = latency_ns - serializationDelayNs(size) - 3200;
+		if (unlikely(debug))
 			std::cout
 				<< "On ACK :\n" 
 				<< "\ttarget latency = " << target_delay << "\n"
 				<< "\tactual latency = " << latency_ns << "\n"
+				<< "\tactual rtt     = " << actual_rtt << "\n" 
 				<< "\tqueueing delay = " << queueing_delay << "\n"
 				<< "\tsize           = " << size << "\n"
 				<< "\tcwnd           = " << cwnd << "\n"
 				<< "\tinflight       = " << inflight_size << "\n";
 
-		if (queueing_delay > 0.15 * target_delay)
-			cwnd = std::max(cwnd / 2, (size_t)kMinChunkSz);
-		else
-			cwnd = std::min(cwnd + cwnd * 0.1, (double)kMaxChunkSz);
+		if (actual_rtt > 2500) {
+			cwnd = std::max(cwnd / 2, (size_t)kMinCwndSz);
+		} else {
+			cwnd = std::min(cwnd + cwnd * 0.1, (double)kMaxCwndSz);
+		}
 
-		inflight_size -= size;
+		//inflight_size -= size;
 	}
 
 	// Has to be done with queueing delay
-	void check_inflight(double now, bool force = false) {
+	void check_inflight(size_t now, bool force = false) {
 		float ms;
 		while (!inflight_chunks.empty()) {
 			auto front = inflight_chunks.front();
+			if (force) now = ns_now();
 			if (!force && front.query_time > now)
 				break;
 
 			cudaError_t err = cudaEventQuery(front.end);
-			if (err == cudaErrorNotReady)
-				break;
+			if (err == cudaErrorNotReady) {
+				if (force) continue;
+				else break;
+			}
 			CHECK_CUDA_ERROR(err);
 
 			inflight_chunks.pop_front();
@@ -511,31 +521,32 @@ private:
 					break;
 			}
 
-			CHECK_CUDA_ERROR(cudaEventRecord(iter_start_event, stream));
-			double launch_us = us_now();
+			//CHECK_CUDA_ERROR(cudaEventRecord(iter_start_event, stream));
+			double launch_ns = ns_now();
 			size_t offset = 0;
 			while (offset < buffer_size) {
-				double now = ns_now();
+				size_t now = ns_now();
 				check_inflight(now);
 				size_t window = available_window();
 				size_t remaining = buffer_size - offset;
-				if (!can_send() || window == 0 || (remaining >= kMinChunkSz && window < kMinChunkSz)) {
+				if (!can_send() || window == 0 || (remaining >= kMinCwndSz && window < kMinCwndSz)) {
 					//std::this_thread::yield();
 					continue;
 				}
 
-				size_t current_chunk = std::min(window, remaining);
+				size_t current_chunk = std::min(kMaxCwndSz, std::min(window, remaining));
 				send(current_chunk, offset);
 				offset += current_chunk;
 			}
 
-			CHECK_CUDA_ERROR(cudaEventRecord(iter_end_event, stream));
-			CHECK_CUDA_ERROR(cudaEventSynchronize(iter_end_event));
+			//CHECK_CUDA_ERROR(cudaEventRecord(iter_end_event, stream));
 			check_inflight(ns_now(), true);
+			//CHECK_CUDA_ERROR(cudaEventSynchronize(iter_end_event));
+			double end_ns = ns_now();
 
-			float ms = 0;
-			CHECK_CUDA_ERROR(cudaEventElapsedTime(&ms, iter_start_event, iter_end_event));
-			pending_samples.push_back({launch_us, (double)ms * 1000.0});
+			//float ms = 0;
+			//CHECK_CUDA_ERROR(cudaEventElapsedTime(&ms, iter_start_event, iter_end_event));
+			pending_samples.push_back({(double)launch_ns / 1000, (double)(end_ns - launch_ns) / 1000});
 			next_iter_ns = ns_now() + gap_us * 1000.0;
 		}
 
@@ -546,14 +557,14 @@ private:
 		return inflight_chunks.size() < maxQueuedChunks;
 	}
 
-	static constexpr long kLaunchOverhead_ns = 4700;
+	static constexpr long kLaunchOverhead_ns = 4500;
 	static constexpr long kLinkSpeed = 400 * 1e9; // H100/H200 400 GB/s
 	static constexpr long kLinkSpeed_Bpns = 400; // H100/H200 400 GB/s
 	static constexpr long kEventPoolSz = 16 * 2; // we assume 16 queued requests
-	static constexpr long kMinChunkSz = 256 * 1024; // 300 KB (with CE ~50GB/s) which is the fair bw share on h100/h200
-	static constexpr long kMaxChunkSz = 8 * 1024 * 1024; // 300 KB (with CE ~50GB/s) which is the fair bw share on h100/h200
-	static constexpr long kCwndStartSz = 8 * 1024 * 1024; // 300 KB (with CE ~50GB/s) which is the fair bw share on h100/h200
-	static constexpr long maxQueuedChunks = 2;
+	static constexpr size_t kStartCwndSz = 16 * 1024 * 1024; // 8 MB (with CE ~340B/s) which is the fair bw share on h100/h200
+	static constexpr size_t kMinCwndSz = 256 * 1024; // 256 KB (with CE ~50GB/s) which is the fair bw share on h100/h200
+	static constexpr size_t kMaxCwndSz = 32 * 1024 * 1024; // 128MB (with CE ~390GB/s) which is the fair bw share on h100/h200
+	static constexpr long maxQueuedChunks = 4;
 
 	struct InflightChunk {
 		cudaEvent_t start, end;
@@ -1300,3 +1311,5 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
+
+

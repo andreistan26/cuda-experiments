@@ -66,6 +66,7 @@ def main():
     ax.set_xlabel("Buffer size", fontsize="x-large")
     ax.set_ylabel("Bandwidth(GB/s)", fontsize="x-large")
     ax.set_xticks(buffer_sizes)
+    ax.set_xscale('log')
     ax.set_xticklabels(labels)
     ax.legend(fontsize="large")
     ax.grid()
