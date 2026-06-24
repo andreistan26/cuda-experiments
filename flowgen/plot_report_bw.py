@@ -51,7 +51,7 @@ def main():
     legend = ax.legend(fontsize="medium", loc='upper right', bbox_to_anchor=(1,1))
     ax.grid()
     _, right = ax.get_xlim()
-    ax.set_xlim(right=(right * 1.2))
+    ax.set_xlim(right=(right * 1.25))
     ax.grid(which="minor", color="0.9")
     if len(sys.argv) >= 3: plt.savefig(sys.argv[2])
     plt.tight_layout()
@@ -61,4 +61,3 @@ if __name__ == "__main__":
     main()
 
 
-    # 11:30 16:00
