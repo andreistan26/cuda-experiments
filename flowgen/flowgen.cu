@@ -58,7 +58,8 @@ bool debug = getenv("DEBUG") != nullptr;
 bool nsys = getenv("NSYS") != nullptr;
 
 /* barrier that runs a completion function in the last arriving thread
- * before releasing everyone (used to capture the common epoch) */
+ * before releasing everyone (used to capture the common epoch)
+ * */
 struct SyncBarrier {
     SyncBarrier(int count, std::function<void()> on_complete = {})
         : count(count), on_complete(std::move(on_complete)) {}
@@ -146,6 +147,7 @@ template <typename T>
 __global__ void spaced_striding_kernel(BufferPair *iov, size_t size, int iters,
                                        unsigned long long gap_ns,
                                        unsigned long long *iter_ts,
+                                       volatile int *arrival_flags,
                                        volatile int *start_flag) {
     cg::grid_group grid = cg::this_grid();
     size_t from = blockDim.x * blockIdx.x + threadIdx.x;
@@ -160,17 +162,24 @@ __global__ void spaced_striding_kernel(BufferPair *iov, size_t size, int iters,
     grid.sync();
     for (int it = 0; it < iters; ++it) {
         if (leader) iter_ts[2 * it] = d_globaltimer();
-        //grid.sync();
+        grid.sync();
 
         striding_copy_body<T>(iov, size, from, totalThreadCount);
 
         grid.sync();
-        if (leader) iter_ts[2 * it + 1] = d_globaltimer();
+        __threadfence_system();
+        grid.sync();
+        if (leader && arrival_flags) {
+            arrival_flags[it] = it + 1;
+            __threadfence_system();
+        }
+        grid.sync();
+        unsigned long long stop = d_globaltimer();
+        if (leader) iter_ts[2 * it + 1] = stop;
 
         /* in-kernel spacing: hold the grid for gap_ns before the next copy */
         if (gap_ns > 0 && it + 1 < iters) {
-            unsigned long long t0 = d_globaltimer();
-            while (d_globaltimer() - t0 < gap_ns) {
+            while (d_globaltimer() - stop < gap_ns) {
                 //__nanosleep(100);
             }
         }
@@ -462,6 +471,7 @@ private:
 		double target_delay = targetDelayNs(size);
 		double queueing_delay = latency_ns - target_delay;
 		double actual_rtt = latency_ns - serializationDelayNs(size) - 3200;
+		constexpr static double target_lat = 5000;
 		if (unlikely(debug))
 			std::cout
 				<< "On ACK :\n" 
@@ -473,10 +483,12 @@ private:
 				<< "\tcwnd           = " << cwnd << "\n"
 				<< "\tinflight       = " << inflight_size << "\n";
 
-		if (actual_rtt > 2500) {
-			cwnd = std::max(cwnd / 2, (size_t)kMinCwndSz);
+		if (actual_rtt > target_lat) {
+			cwnd = std::max<size_t>(
+					cwnd * std::max<double>(1 - (actual_rtt - target_lat) / actual_rtt, 0.5),
+					kMinCwndSz);
 		} else {
-			cwnd = std::min(cwnd + cwnd * 0.1, (double)kMaxCwndSz);
+			cwnd = std::min(cwnd + size * 0.1, (double)kMaxCwndSz);
 		}
 
 		//inflight_size -= size;
@@ -562,7 +574,7 @@ private:
 	static constexpr long kLinkSpeed_Bpns = 400; // H100/H200 400 GB/s
 	static constexpr long kEventPoolSz = 16 * 2; // we assume 16 queued requests
 	static constexpr size_t kStartCwndSz = 16 * 1024 * 1024; // 8 MB (with CE ~340B/s) which is the fair bw share on h100/h200
-	static constexpr size_t kMinCwndSz = 256 * 1024; // 256 KB (with CE ~50GB/s) which is the fair bw share on h100/h200
+	static constexpr size_t kMinCwndSz = 512 * 1024; // 512 KB (with CE ~50GB/s) which is the fair bw share on h100/h200
 	static constexpr size_t kMaxCwndSz = 32 * 1024 * 1024; // 128MB (with CE ~390GB/s) which is the fair bw share on h100/h200
 	static constexpr long maxQueuedChunks = 4;
 
@@ -652,17 +664,26 @@ struct SMUnrolledFlow : public Flow {
 struct SMSpacedFlow : public Flow {
     using T = uint4;
     unsigned long long *d_iter_ts = nullptr;   /* 2 entries per iter: [start, stop] */
+    int *d_arrival_flags = nullptr; /* written from src GPU into dst GPU memory */
     std::vector<unsigned long long> h_iter_ts;
+    std::vector<int> h_arrival_flags;
     int *h_start_flag = nullptr;  /* mapped, CPU->GPU: go signal */
     int *d_start_flag = nullptr;
 
     SMSpacedFlow(FlowConfig config) : Flow(config) {
         h_iter_ts.resize(std::max(0, iters) * 2);
+        h_arrival_flags.resize(std::max(0, iters));
         CHECK_CUDA_ERROR(cudaSetDevice(desc.src_gpu));
         CHECK_CUDA_ERROR(cudaMalloc(&d_iter_ts, sizeof(unsigned long long) * h_iter_ts.size()));
         CHECK_CUDA_ERROR(cudaHostAlloc((void **)&h_start_flag, sizeof(int), cudaHostAllocMapped));
         CHECK_CUDA_ERROR(cudaHostGetDevicePointer((void **)&d_start_flag, h_start_flag, 0));
         *h_start_flag = 0;
+        if (!h_arrival_flags.empty()) {
+            CHECK_CUDA_ERROR(cudaSetDevice(desc.dst_gpu));
+            CHECK_CUDA_ERROR(cudaMalloc(&d_arrival_flags, sizeof(int) * h_arrival_flags.size()));
+            CHECK_CUDA_ERROR(cudaMemset(d_arrival_flags, 0, sizeof(int) * h_arrival_flags.size()));
+            CHECK_CUDA_ERROR(cudaSetDevice(desc.src_gpu));
+        }
     }
 
     bool persistent() const override { return true; }
@@ -680,10 +701,15 @@ struct SMSpacedFlow : public Flow {
         unsigned long long gap_ns = (unsigned long long)(gap_us * 1000.0);
 
         *(volatile int *)h_start_flag = 0;
+        if (d_arrival_flags) {
+            CHECK_CUDA_ERROR(cudaSetDevice(desc.dst_gpu));
+            CHECK_CUDA_ERROR(cudaMemset(d_arrival_flags, 0, sizeof(int) * h_arrival_flags.size()));
+            CHECK_CUDA_ERROR(cudaSetDevice(desc.src_gpu));
+        }
 
         dim3 gridDim(grid_size, 1, 1);
         dim3 blockDim(threadsPerBlock, 1, 1);
-        void *args[] = {&d_iov, &iov_size, &iters, &gap_ns, &d_iter_ts, &d_start_flag};
+        void *args[] = {&d_iov, &iov_size, &iters, &gap_ns, &d_iter_ts, &d_arrival_flags, &d_start_flag};
         CHECK_CUDA_ERROR(cudaLaunchCooperativeKernel(
             (void *)spaced_striding_kernel<T>, gridDim, blockDim, args, 0, stream));
     }
@@ -692,11 +718,23 @@ struct SMSpacedFlow : public Flow {
         CHECK_CUDA_ERROR(cudaSetDevice(desc.src_gpu));
         CHECK_CUDA_ERROR(cudaMemcpy(h_iter_ts.data(), d_iter_ts,
             sizeof(unsigned long long) * h_iter_ts.size(), cudaMemcpyDeviceToHost));
+        if (d_arrival_flags) {
+            CHECK_CUDA_ERROR(cudaSetDevice(desc.dst_gpu));
+            CHECK_CUDA_ERROR(cudaMemcpy(h_arrival_flags.data(), d_arrival_flags,
+                sizeof(int) * h_arrival_flags.size(), cudaMemcpyDeviceToHost));
+            CHECK_CUDA_ERROR(cudaSetDevice(desc.src_gpu));
+        }
 
         unsigned long long ref = h_iter_ts.empty() ? 0 : h_iter_ts[0];
         for (int it = 0; it < iters; ++it) {
             unsigned long long start = h_iter_ts[2 * it];
             unsigned long long stop = h_iter_ts[2 * it + 1];
+            if (!h_arrival_flags.empty() && h_arrival_flags[it] != it + 1) {
+                std::cerr << "SM_SPACED arrival ack missing for iter " << it
+                          << ": expected " << (it + 1)
+                          << ", got " << h_arrival_flags[it] << std::endl;
+                exit(1);
+            }
             IterSample s;
             s.launch_us = base_launch_us + (double)(start - ref) / 1000.0;
             s.latency_us = (double)(stop - start) / 1000.0;
@@ -705,6 +743,10 @@ struct SMSpacedFlow : public Flow {
     }
 
     ~SMSpacedFlow() override {
+        if (d_arrival_flags) {
+            CHECK_CUDA_ERROR(cudaSetDevice(desc.dst_gpu));
+            CHECK_CUDA_ERROR(cudaFree(d_arrival_flags));
+        }
         CHECK_CUDA_ERROR(cudaSetDevice(desc.src_gpu));
         CHECK_CUDA_ERROR(cudaFree(d_iter_ts));
         CHECK_CUDA_ERROR(cudaFreeHost(h_start_flag));
@@ -1311,5 +1353,4 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
-
 

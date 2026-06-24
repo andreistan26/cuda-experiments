@@ -1,12 +1,12 @@
 [
     {
-        "src_gpu": 1, "dst_gpu": 0,
-        "buffer_size": "256k", "type": "spaced", "sm_count": 20,
-        "iters": 600, "start_us": 1100, "gap_us": 10
+        "src_gpu": 2, "dst_gpu": 0,
+        "buffer_size": "1m", "type": "spaced", "sm_count": 80,
+        "iters": 1100, "start_us": 1100, "gap_us": 10
     },
     {
         "src_gpu": 1, "dst_gpu": 0,
-        "buffer_size": "256m", "type": "cc_ce",
-        "iters": 3, "start_us": 300, "gap_us": 1000
+        "buffer_size": "256m", "type": "ce",
+        "iters": 8, "start_us": 300, "gap_us": 1000
     }
 ]
