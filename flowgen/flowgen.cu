@@ -433,7 +433,15 @@ private:
 
 	double targetDelayNs(size_t size) {
 		size_t additional_oh_ns = nsys ? 3000 : 0;
-		return kLaunchOverhead_ns + serializationDelayNs(size) + additional_oh_ns;
+		double base_target_delay = kLaunchOverhead_ns + serializationDelayNs(size) + additional_oh_ns;
+		static constexpr size_t fs_min_cwnd = 1 * 1024 * 1024;
+		static constexpr size_t fs_max_cwnd = 8 * 1024 * 1024;
+		static constexpr double fs_range = 7000;
+		static constexpr double isqrt_fs_min = 1 / 1024;
+		static constexpr double isqrt_fs_max = 2896.30937574;
+		static constexpr double alpha = fs_range / (isqrt_fs_min - isqrt_fs_max);
+		static constexpr double beta = -alpha * isqrt_fs_max;
+		return base_target_delay + std::max<double>(0, std::min(alpha / std::sqrt(cwnd) + beta, fs_range));
 	}
 
 	size_t available_window() const {
@@ -486,7 +494,7 @@ private:
 				<< "\tcwnd           = " << cwnd << "\n"
 				<< "\tinflight       = " << inflight_size << "\n";
 
-		if (actual_rtt > target_lat && !first_call) {
+		if (actual_rtt > target_delay && !first_call) {
 			cwnd = std::max<size_t>(
 					cwnd * std::max<double>(1 - (actual_rtt - target_lat) / actual_rtt, 0.5),
 					kMinCwndSz);
