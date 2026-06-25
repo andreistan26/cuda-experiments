@@ -56,6 +56,8 @@ static double ns_now() {
 
 bool debug = getenv("DEBUG") != nullptr;
 bool nsys = getenv("NSYS") != nullptr;
+bool leaky = getenv("LEAKY") != nullptr;
+size_t var_target_lat;
 
 /* barrier that runs a completion function in the last arriving thread
  * before releasing everyone (used to capture the common epoch)
@@ -238,7 +240,8 @@ enum FlowAlgo {
     SM_SPACED,
     TMA,
     CE,
-    CC_CE
+    CC_CE,
+	RATE_CE
 };
 
 std::string algo_to_string(FlowAlgo algo) {
@@ -465,13 +468,13 @@ private:
 		//inflight_size += size;
 	}
 
+	bool first_call = true;
 	void update_on_ack(size_t size, double latency_ns) {
 		//latencies_ns.push_back(latency_ns);
-
 		double target_delay = targetDelayNs(size);
 		double queueing_delay = latency_ns - target_delay;
 		double actual_rtt = latency_ns - serializationDelayNs(size) - 3200;
-		constexpr static double target_lat = 5000;
+		constexpr static double target_lat = 7000;
 		if (unlikely(debug))
 			std::cout
 				<< "On ACK :\n" 
@@ -483,13 +486,14 @@ private:
 				<< "\tcwnd           = " << cwnd << "\n"
 				<< "\tinflight       = " << inflight_size << "\n";
 
-		if (actual_rtt > target_lat) {
+		if (actual_rtt > target_lat && !first_call) {
 			cwnd = std::max<size_t>(
 					cwnd * std::max<double>(1 - (actual_rtt - target_lat) / actual_rtt, 0.5),
 					kMinCwndSz);
 		} else {
 			cwnd = std::min(cwnd + size * 0.1, (double)kMaxCwndSz);
 		}
+		first_call = false;
 
 		//inflight_size -= size;
 	}
@@ -577,6 +581,256 @@ private:
 	static constexpr size_t kMinCwndSz = 512 * 1024; // 512 KB (with CE ~50GB/s) which is the fair bw share on h100/h200
 	static constexpr size_t kMaxCwndSz = 32 * 1024 * 1024; // 128MB (with CE ~390GB/s) which is the fair bw share on h100/h200
 	static constexpr long maxQueuedChunks = 4;
+
+	struct InflightChunk {
+		cudaEvent_t start, end;
+		double query_time; // To lower overhead of cudaEventQuery()
+		size_t size; // size of the chunk
+	};
+
+	std::thread worker;
+	cudaEvent_t iter_start_event, iter_end_event;
+	std::deque<cudaEvent_t> free_events;
+	std::deque<InflightChunk> inflight_chunks;
+	std::vector<double> latencies_ns;
+	std::vector<IterSample> pending_samples;
+	size_t inflight_size{0};
+
+	std::atomic<bool> start{false};
+	std::atomic<bool> worker_done{false};
+};
+
+// Copy of CC_CEFlow should be abstracted but not now :(
+// Implementation of a leaky bucket algorithm for CE congestion control
+struct CC_LEAKY_CEFlow : public Flow {
+	double admission_rate_GBps;
+	size_t bucket_size;
+    CC_LEAKY_CEFlow(FlowConfig config) : Flow(config) {
+		if (iov_size != 1) {
+			std::cerr << "CC_CE does not support --kiter/iov_size != 1 yet" << std::endl;
+			exit(1);
+		}
+
+		admission_rate_GBps = kMaxAdmissionRateGBps;
+		CHECK_CUDA_ERROR(cudaSetDevice(desc.src_gpu));
+		for (int i = 0; i < kEventPoolSz; i++) {
+			cudaEvent_t ev;
+			CHECK_CUDA_ERROR(cudaEventCreate(&ev));
+			free_events.push_back(ev);
+		}
+		CHECK_CUDA_ERROR(cudaEventCreate(&iter_start_event));
+		CHECK_CUDA_ERROR(cudaEventCreate(&iter_end_event));
+	}
+
+	~CC_LEAKY_CEFlow() override {
+		if (worker.joinable())
+			worker.join();
+		CHECK_CUDA_ERROR(cudaSetDevice(desc.src_gpu));
+		for (auto ev : free_events)
+			CHECK_CUDA_ERROR(cudaEventDestroy(ev));
+		CHECK_CUDA_ERROR(cudaEventDestroy(iter_start_event));
+		CHECK_CUDA_ERROR(cudaEventDestroy(iter_end_event));
+	}
+
+	bool persistent() const override { return true; }
+
+	void launch_copy_kernel() override {
+		wait_idle();
+
+		start.store(false, std::memory_order_release);
+		worker_done.store(false, std::memory_order_release);
+		pending_samples.clear();
+		latencies_ns.clear();
+		inflight_chunks.clear();
+		inflight_size = 0;
+		admission_rate_GBps = kMaxAdmissionRateGBps;
+		bucket_size = kChunkSize;
+		worker = std::thread(&CC_LEAKY_CEFlow::run, this);
+	}
+
+	void signal_start() override {
+		start.store(true, std::memory_order_release);
+	}
+
+	cudaError_t query_complete() override {
+		return worker_done.load(std::memory_order_acquire) ? cudaSuccess : cudaErrorNotReady;
+	}
+
+	void wait_idle() override {
+		if (worker.joinable())
+			worker.join();
+	}
+
+	void collect_samples(double base_launch_us) override {
+		samples.insert(samples.end(), pending_samples.begin(), pending_samples.end());
+	}
+
+    void __launch_copy_kernel() override {}
+
+private:
+	double serializationDelayNs(size_t size) {
+		return size / kLinkSpeed_Bpns;
+	}
+
+	double targetDelayNs(size_t size) {
+		size_t additional_oh_ns = nsys ? 3000 : 0;
+		return kLaunchOverhead_ns + serializationDelayNs(size) + additional_oh_ns;
+	}
+
+
+	void send(size_t size, size_t offset) {
+		auto start_event = free_events.front();
+		free_events.pop_front();
+		auto end_event = free_events.front();
+		free_events.pop_front();
+
+
+		CHECK_CUDA_ERROR(cudaEventRecord(start_event, stream));
+		CHECK_CUDA_ERROR(cudaMemcpyPeerAsync(
+			(char *)iov[0].dest + offset,
+			desc.dst_gpu,
+			(char *)iov[0].src + offset,
+			desc.src_gpu,
+			size,
+			stream
+		));
+		CHECK_CUDA_ERROR(cudaEventRecord(end_event, stream));
+		inflight_chunks.push_back(InflightChunk{
+			.start = start_event,
+			.end = end_event,
+			.query_time = ns_now() + targetDelayNs(size) - 2000, // start polling 1us before expected completion time
+			.size = size,
+		});
+		//inflight_size += size;
+	}
+
+	bool first_call = true;
+	void update_on_ack(size_t size, double latency_ns) {
+		//latencies_ns.push_back(latency_ns);
+
+		double target_delay = targetDelayNs(size);
+		double queueing_delay = latency_ns - target_delay;
+		double actual_rtt = latency_ns - serializationDelayNs(size) - 3200;
+		constexpr static double target_lat = 7000;
+		if (unlikely(debug))
+			std::cout
+				<< "On ACK :\n" 
+				<< "\ttarget latency = " << target_delay << "\n"
+				<< "\tactual latency = " << latency_ns << "\n"
+				<< "\tactual rtt     = " << actual_rtt << "\n" 
+				<< "\tqueueing delay = " << queueing_delay << "\n"
+				<< "\tsize           = " << size << "\n"
+				<< "\tadmission rate = " << admission_rate_GBps << "\n"
+				<< "\tinflight chunks= " << inflight_chunks.size() << "\n";
+
+		if (actual_rtt > var_target_lat && !first_call) {
+			admission_rate_GBps = std::max<double>(
+					admission_rate_GBps * std::max<double>(1 - (actual_rtt - var_target_lat) / actual_rtt, 0.5),
+					kMinAdmissionRateGBps);
+		} else {
+			admission_rate_GBps = std::min(admission_rate_GBps + admission_rate_GBps * 0.1, kMaxAdmissionRateGBps);
+		}
+		first_call = false;
+
+		//inflight_size -= size;
+	}
+
+	// Has to be done with queueing delay
+	void check_inflight(size_t now, bool force = false) {
+		float ms;
+		while (!inflight_chunks.empty()) {
+			auto front = inflight_chunks.front();
+			if (force) now = ns_now();
+			if (!force && front.query_time > now)
+				break;
+
+			cudaError_t err = cudaEventQuery(front.end);
+			if (err == cudaErrorNotReady) {
+				if (force) continue;
+				else break;
+			}
+			CHECK_CUDA_ERROR(err);
+
+			inflight_chunks.pop_front();
+			CHECK_CUDA_ERROR(cudaEventElapsedTime(&ms, front.start, front.end));
+			double latency_ns = ms * 1e6;
+			update_on_ack(front.size, latency_ns);
+			free_events.push_back(front.start);
+			free_events.push_back(front.end);
+		}
+	}
+	void update_bucket(size_t last_ns, size_t current_ns) {
+		size_t delta_ns = current_ns - last_ns;
+		bucket_size += admission_rate_GBps * delta_ns;
+	}
+
+	void run() {
+		CHECK_CUDA_ERROR(cudaSetDevice(desc.src_gpu));
+		while (!start.load(std::memory_order_acquire))
+			;//std::this_thread::yield();
+
+		size_t last_ns = ns_now();
+		double next_iter_ns = ns_now();
+		for (int iter = 0; iter < iters; ++iter) {
+			while (true) {
+				double now = ns_now();
+				check_inflight(now);
+				if (now >= next_iter_ns)
+					break;
+			}
+
+			//CHECK_CUDA_ERROR(cudaEventRecord(iter_start_event, stream));
+			double launch_ns = ns_now();
+			size_t offset = 0;
+			while (offset < buffer_size) {
+				size_t now = ns_now();
+				update_bucket(last_ns, now);
+				last_ns = now;
+				check_inflight(now);
+				size_t remaining = buffer_size - offset;
+				if (!can_send(remaining)) {
+					//std::this_thread::yield();
+					continue;
+				}
+
+				size_t current_chunk = std::min(kChunkSize, remaining);
+				send(current_chunk, offset);
+				offset += current_chunk;
+				bucket_size = 0;
+			}
+
+			//CHECK_CUDA_ERROR(cudaEventRecord(iter_end_event, stream));
+			check_inflight(ns_now(), true);
+			//CHECK_CUDA_ERROR(cudaEventSynchronize(iter_end_event));
+			double end_ns = ns_now();
+
+			//float ms = 0;
+			//CHECK_CUDA_ERROR(cudaEventElapsedTime(&ms, iter_start_event, iter_end_event));
+			pending_samples.push_back({(double)launch_ns / 1000, (double)(end_ns - launch_ns) / 1000});
+			next_iter_ns = ns_now() + gap_us * 1000.0;
+		}
+
+		worker_done.store(true, std::memory_order_release);
+	}
+
+	bool can_send(size_t size) {
+
+		return (size < kChunkSize && bucket_size >= size ||
+				bucket_size >= kChunkSize)
+		&& inflight_chunks.size() < maxQueuedChunks;
+	}
+
+	static constexpr long kLaunchOverhead_ns = 4500;
+	static constexpr long kLinkSpeed = 400 * 1e9; // H100/H200 400 GB/s
+	static constexpr long kLinkSpeed_Bpns = 400; // H100/H200 400 GB/s
+	static constexpr long kEventPoolSz = 16 * 2; // we assume 16 queued requests
+	static constexpr size_t kStartCwndSz = 16 * 1024 * 1024; // 8 MB (with CE ~340B/s) which is the fair bw share on h100/h200
+	static constexpr size_t kMinCwndSz = 512 * 1024; // 512 KB (with CE ~50GB/s) which is the fair bw share on h100/h200
+	static constexpr size_t kMaxCwndSz = 32 * 1024 * 1024; // 128MB (with CE ~390GB/s) which is the fair bw share on h100/h200
+	static constexpr long maxQueuedChunks = 4;
+	static constexpr double kMaxAdmissionRateGBps = 400; // Assumint H100
+	static constexpr double kMinAdmissionRateGBps = 50; // Assuming 8GPUs in a scale-up domain
+	static constexpr size_t kChunkSize = 32 * 1024 * 1024; // 16MB should be enough to go line rate
 
 	struct InflightChunk {
 		cudaEvent_t start, end;
@@ -760,6 +1014,8 @@ std::unique_ptr<Flow> to_flow(FlowConfig cfg) {
 			std::cerr << "CC_CE does not support --kiter/iov_size != 1 yet" << std::endl;
 			exit(1);
 		}
+		if (leaky)
+			return std::make_unique<CC_LEAKY_CEFlow>(cfg);
         return std::make_unique<CC_CEFlow>(cfg);
     case CE:
         return std::make_unique<CEFlow>(cfg);
@@ -1275,6 +1531,11 @@ int main(int argc, char* argv[]) {
         {"gap-us", required_argument, 0, 'G'},
         {0, 0, 0, 0}
     };
+
+	char *target_lat_str = getenv("LAT");
+	if (target_lat_str) {
+		var_target_lat = std::atoi(target_lat_str);
+	}
 
     int opt;
     while ((opt = getopt_long(argc, argv, "", long_options, nullptr)) != -1) {
