@@ -1,0 +1,141 @@
+{
+    "average_latency_us": 1365.9392,
+    "flows": [
+        {
+            "avg_bandwidth_GBs": 197.65060695167006,
+            "avg_latency_us": 1358.1312,
+            "buffer_size": 268435456,
+            "bytes_per_iter": 268435456,
+            "dst": 0,
+            "gap_us": 100.0,
+            "iov_size": 1,
+            "iterations": [
+                {
+                    "bandwidth_GBs": 169.94748784440844,
+                    "latency_us": 1579.52,
+                    "launch_us": 1.5
+                },
+                {
+                    "bandwidth_GBs": 195.15652335752839,
+                    "latency_us": 1375.488,
+                    "launch_us": 1681.75
+                },
+                {
+                    "bandwidth_GBs": 194.00111008325626,
+                    "latency_us": 1383.68,
+                    "launch_us": 3157.75
+                },
+                {
+                    "bandwidth_GBs": 195.15652335752839,
+                    "latency_us": 1375.488,
+                    "launch_us": 4641.5
+                },
+                {
+                    "bandwidth_GBs": 198.33100056742958,
+                    "latency_us": 1353.472,
+                    "launch_us": 6117.0
+                },
+                {
+                    "bandwidth_GBs": 201.41682673837877,
+                    "latency_us": 1332.736,
+                    "launch_us": 7570.5
+                },
+                {
+                    "bandwidth_GBs": 204.72003123779774,
+                    "latency_us": 1311.232,
+                    "launch_us": 9003.5
+                },
+                {
+                    "bandwidth_GBs": 206.08805031446542,
+                    "latency_us": 1302.528,
+                    "launch_us": 10414.75
+                },
+                {
+                    "bandwidth_GBs": 209.04625199362044,
+                    "latency_us": 1284.096,
+                    "launch_us": 11817.5
+                },
+                {
+                    "bandwidth_GBs": 209.2130885873903,
+                    "latency_us": 1283.072,
+                    "launch_us": 13204.0
+                }
+            ],
+            "iters_completed": 10,
+            "max_latency_us": 1579.52,
+            "min_latency_us": 1283.072,
+            "sm_count": 80,
+            "src": 2,
+            "start_us": 300.0,
+            "type": "CC_CE"
+        },
+        {
+            "avg_bandwidth_GBs": 195.40382393500056,
+            "avg_latency_us": 1373.7472,
+            "buffer_size": 268435456,
+            "bytes_per_iter": 268435456,
+            "dst": 0,
+            "gap_us": 100.0,
+            "iov_size": 1,
+            "iterations": [
+                {
+                    "bandwidth_GBs": 172.1622986146742,
+                    "latency_us": 1559.2,
+                    "launch_us": 0.0
+                },
+                {
+                    "bandwidth_GBs": 193.06791870929138,
+                    "latency_us": 1390.368,
+                    "launch_us": 1659.25
+                },
+                {
+                    "bandwidth_GBs": 191.71331931620807,
+                    "latency_us": 1400.192,
+                    "launch_us": 3149.75
+                },
+                {
+                    "bandwidth_GBs": 191.56009225639974,
+                    "latency_us": 1401.312,
+                    "launch_us": 4650.0
+                },
+                {
+                    "bandwidth_GBs": 195.23828143182982,
+                    "latency_us": 1374.912,
+                    "launch_us": 6151.25
+                },
+                {
+                    "bandwidth_GBs": 197.82586548438826,
+                    "latency_us": 1356.928,
+                    "launch_us": 7626.25
+                },
+                {
+                    "bandwidth_GBs": 201.83359799817143,
+                    "latency_us": 1329.984,
+                    "launch_us": 9083.25
+                },
+                {
+                    "bandwidth_GBs": 202.06209803685417,
+                    "latency_us": 1328.48,
+                    "launch_us": 10513.25
+                },
+                {
+                    "bandwidth_GBs": 206.45832000196896,
+                    "latency_us": 1300.192,
+                    "launch_us": 11941.75
+                },
+                {
+                    "bandwidth_GBs": 207.14146726918042,
+                    "latency_us": 1295.904,
+                    "launch_us": 13342.0
+                }
+            ],
+            "iters_completed": 10,
+            "max_latency_us": 1559.2,
+            "min_latency_us": 1295.904,
+            "sm_count": 80,
+            "src": 1,
+            "start_us": 300.0,
+            "type": "SM_SPACED"
+        }
+    ]
+}

@@ -36,7 +36,7 @@
     },
     {
         "src_gpu": 7, "dst_gpu": 1,
-        "buffer_size": "32m", "type": "spaced", "sm_count": 80,
-        "iters": 30, "start_us": 700, "gap_us": 100
+        "buffer_size": "32m", "type": "ce", "sm_count": 80,
+        "iters": 30, "start_us": 1000, "gap_us": 100
     }
 ]

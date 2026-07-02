@@ -1,0 +1,42 @@
+[
+    {
+        "src_gpu": 1, "dst_gpu": 0,
+        "buffer_size": "256m", "type": "ce", "sm_count": 30,
+        "iters": 10, "start_us": 1000
+    },
+    {
+        "src_gpu": 2, "dst_gpu": 0,
+        "buffer_size": "256m", "type": "ce", "sm_count": 30,
+        "iters": 10, "start_us": 1000
+    },
+    {
+        "src_gpu": 3, "dst_gpu": 0,
+        "buffer_size": "256m", "type": "ce", "sm_count": 30,
+        "iters": 10, "start_us": 1000
+    },
+    {
+        "src_gpu": 4, "dst_gpu": 0,
+        "buffer_size": "256m", "type": "ce", "sm_count": 30,
+        "iters": 10, "start_us": 1000
+    },
+    {
+        "src_gpu": 5, "dst_gpu": 0,
+        "buffer_size": "256m", "type": "ce", "sm_count": 30,
+        "iters": 10, "start_us": 1000
+    },
+    {
+        "src_gpu": 6, "dst_gpu": 0,
+        "buffer_size": "256m", "type": "ce", "sm_count": 30,
+        "iters": 10, "start_us": 1000
+    },
+    {
+        "src_gpu": 7, "dst_gpu": 0,
+        "buffer_size": "256m", "type": "ce", "sm_count": 30,
+        "iters": 10, "start_us": 1000
+    },
+    {
+        "src_gpu": 7, "dst_gpu": 1,
+        "buffer_size": "256m", "type": "spaced", "sm_count": 80,
+        "iters": 10, "start_us": 1000
+    }
+]

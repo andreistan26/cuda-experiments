@@ -17,6 +17,7 @@
 #include <limits>
 #include <deque>
 #include <atomic>
+#include <random>
 #include <stdlib.h>
 
 #include <cuda_runtime.h>
@@ -613,7 +614,8 @@ private:
 struct CC_LEAKY_CEFlow : public Flow {
 	double admission_rate_GBps;
 	size_t bucket_size;
-    CC_LEAKY_CEFlow(FlowConfig config) : Flow(config) {
+	std::mt19937_64 rng;
+    CC_LEAKY_CEFlow(FlowConfig config) : Flow(config), rng(std::random_device{}()) {
 		if (iov_size != 1) {
 			std::cerr << "CC_CE does not support --kiter/iov_size != 1 yet" << std::endl;
 			exit(1);
@@ -652,7 +654,7 @@ struct CC_LEAKY_CEFlow : public Flow {
 		inflight_chunks.clear();
 		inflight_size = 0;
 		admission_rate_GBps = kMaxAdmissionRateGBps;
-		bucket_size = kChunkSize;
+		bucket_size = 0;
 		worker = std::thread(&CC_LEAKY_CEFlow::run, this);
 	}
 
@@ -682,7 +684,15 @@ private:
 
 	double targetDelayNs(size_t size) {
 		size_t additional_oh_ns = nsys ? 3000 : 0;
-		return kLaunchOverhead_ns + serializationDelayNs(size) + additional_oh_ns;
+		double base_target_delay = kLaunchOverhead_ns + serializationDelayNs(size) + additional_oh_ns;
+		static constexpr size_t fs_min_cwnd = 80;
+		static constexpr size_t fs_max_cwnd = 350;
+		static constexpr double fs_range = 7000;
+		static constexpr double isqrt_fs_min = 1 / 8.9;
+		static constexpr double isqrt_fs_max = 18.708;
+		static constexpr double alpha = fs_range / (isqrt_fs_min - isqrt_fs_max);
+		static constexpr double beta = -alpha * isqrt_fs_max;
+		return base_target_delay + std::max<double>(0, std::min(alpha / std::sqrt(admission_rate_GBps) + beta, fs_range));
 	}
 
 
@@ -714,7 +724,6 @@ private:
 
 	bool first_call = true;
 	void update_on_ack(size_t size, double latency_ns) {
-		//latencies_ns.push_back(latency_ns);
 
 		double target_delay = targetDelayNs(size);
 		double queueing_delay = latency_ns - target_delay;
@@ -731,9 +740,9 @@ private:
 				<< "\tadmission rate = " << admission_rate_GBps << "\n"
 				<< "\tinflight chunks= " << inflight_chunks.size() << "\n";
 
-		if (actual_rtt > var_target_lat && !first_call) {
+		if (actual_rtt > target_delay && !first_call) {
 			admission_rate_GBps = std::max<double>(
-					admission_rate_GBps * std::max<double>(1 - (actual_rtt - var_target_lat) / actual_rtt, 0.5),
+					admission_rate_GBps * std::max<double>(1 - (actual_rtt - target_delay) / actual_rtt, 0.5),
 					kMinAdmissionRateGBps);
 		} else {
 			admission_rate_GBps = std::min(admission_rate_GBps + admission_rate_GBps * 0.1, kMaxAdmissionRateGBps);
@@ -777,7 +786,6 @@ private:
 		while (!start.load(std::memory_order_acquire))
 			;//std::this_thread::yield();
 
-		size_t last_ns = ns_now();
 		double next_iter_ns = ns_now();
 		for (int iter = 0; iter < iters; ++iter) {
 			while (true) {
@@ -791,20 +799,30 @@ private:
 			double launch_ns = ns_now();
 			size_t offset = 0;
 			while (offset < buffer_size) {
-				size_t now = ns_now();
-				update_bucket(last_ns, now);
-				last_ns = now;
-				check_inflight(now);
 				size_t remaining = buffer_size - offset;
-				if (!can_send(remaining)) {
-					//std::this_thread::yield();
-					continue;
+				size_t current_chunk = std::min(kChunkSize, remaining);
+				size_t send_threshold =
+					std::uniform_int_distribution<size_t>(0, current_chunk)(rng);
+				size_t last_ns = ns_now();
+				bool sent = false;
+
+				while (bucket_size < current_chunk || !sent) {
+					size_t now = ns_now();
+					update_bucket(last_ns, now);
+					last_ns = now;
+					bucket_size = std::min(bucket_size, current_chunk);
+					check_inflight(now);
+
+					if (!sent &&
+						bucket_size >= send_threshold &&
+						inflight_chunks.size() < maxQueuedChunks) {
+						send(current_chunk, offset);
+						sent = true;
+					}
 				}
 
-				size_t current_chunk = std::min(kChunkSize, remaining);
-				send(current_chunk, offset);
-				offset += current_chunk;
 				bucket_size = 0;
+				offset += current_chunk;
 			}
 
 			//CHECK_CUDA_ERROR(cudaEventRecord(iter_end_event, stream));
@@ -819,13 +837,6 @@ private:
 		}
 
 		worker_done.store(true, std::memory_order_release);
-	}
-
-	bool can_send(size_t size) {
-
-		return (size < kChunkSize && bucket_size >= size ||
-				bucket_size >= kChunkSize)
-		&& inflight_chunks.size() < maxQueuedChunks;
 	}
 
 	static constexpr long kLaunchOverhead_ns = 4500;
@@ -1622,4 +1633,3 @@ int main(int argc, char* argv[]) {
 
     return 0;
 }
-

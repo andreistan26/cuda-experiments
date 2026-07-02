@@ -1,0 +1,549 @@
+{
+    "average_latency_us": 4360.194414273453,
+    "flows": [
+        {
+            "avg_bandwidth_GBs": 58.74169686346777,
+            "avg_latency_us": 4569.75998878479,
+            "buffer_size": 268435456,
+            "bytes_per_iter": 268435456,
+            "dst": 0,
+            "gap_us": 0.0,
+            "iov_size": 1,
+            "iterations": [
+                {
+                    "bandwidth_GBs": 55.78459419752098,
+                    "latency_us": 4811.999797821045,
+                    "launch_us": 0.5
+                },
+                {
+                    "bandwidth_GBs": 60.243079795287166,
+                    "latency_us": 4455.872058868408,
+                    "launch_us": 4842.0
+                },
+                {
+                    "bandwidth_GBs": 59.1334233146014,
+                    "latency_us": 4539.487838745117,
+                    "launch_us": 9312.25
+                },
+                {
+                    "bandwidth_GBs": 62.67358016093646,
+                    "latency_us": 4283.071994781494,
+                    "launch_us": 13875.5
+                },
+                {
+                    "bandwidth_GBs": 55.9206957571503,
+                    "latency_us": 4800.288200378418,
+                    "launch_us": 18172.75
+                },
+                {
+                    "bandwidth_GBs": 59.406042249926024,
+                    "latency_us": 4518.655776977539,
+                    "launch_us": 22985.75
+                },
+                {
+                    "bandwidth_GBs": 59.47131673925299,
+                    "latency_us": 4513.696193695068,
+                    "launch_us": 27517.5
+                },
+                {
+                    "bandwidth_GBs": 58.376242658256146,
+                    "latency_us": 4598.368167877197,
+                    "launch_us": 32046.25
+                },
+                {
+                    "bandwidth_GBs": 60.34058411033427,
+                    "latency_us": 4448.671817779541,
+                    "launch_us": 36658.75
+                },
+                {
+                    "bandwidth_GBs": 56.781837135547676,
+                    "latency_us": 4727.488040924072,
+                    "launch_us": 41121.0
+                }
+            ],
+            "iters_completed": 10,
+            "max_latency_us": 4811.999797821045,
+            "min_latency_us": 4283.071994781494,
+            "sm_count": 30,
+            "src": 1,
+            "start_us": 1000.0,
+            "type": "CE"
+        },
+        {
+            "avg_bandwidth_GBs": 55.87183131063661,
+            "avg_latency_us": 4804.486441612244,
+            "buffer_size": 268435456,
+            "bytes_per_iter": 268435456,
+            "dst": 0,
+            "gap_us": 0.0,
+            "iov_size": 1,
+            "iterations": [
+                {
+                    "bandwidth_GBs": 53.720443106263524,
+                    "latency_us": 4996.895790100098,
+                    "launch_us": 0.25
+                },
+                {
+                    "bandwidth_GBs": 54.83861338334177,
+                    "latency_us": 4895.008087158203,
+                    "launch_us": 5030.75
+                },
+                {
+                    "bandwidth_GBs": 53.82902834185944,
+                    "latency_us": 4986.815929412842,
+                    "launch_us": 9948.5
+                },
+                {
+                    "bandwidth_GBs": 53.701180016282734,
+                    "latency_us": 4998.688220977783,
+                    "launch_us": 14951.25
+                },
+                {
+                    "bandwidth_GBs": 53.691556211312125,
+                    "latency_us": 4999.584197998047,
+                    "launch_us": 19964.5
+                },
+                {
+                    "bandwidth_GBs": 53.82523004408153,
+                    "latency_us": 4987.167835235596,
+                    "launch_us": 24978.25
+                },
+                {
+                    "bandwidth_GBs": 54.917596130073605,
+                    "latency_us": 4887.968063354492,
+                    "launch_us": 29979.0
+                },
+                {
+                    "bandwidth_GBs": 55.23945226845935,
+                    "latency_us": 4859.488010406494,
+                    "launch_us": 34881.75
+                },
+                {
+                    "bandwidth_GBs": 55.011231245298426,
+                    "latency_us": 4879.648208618164,
+                    "launch_us": 39754.25
+                },
+                {
+                    "bandwidth_GBs": 75.5390169113499,
+                    "latency_us": 3553.600072860718,
+                    "launch_us": 44653.0
+                }
+            ],
+            "iters_completed": 10,
+            "max_latency_us": 4999.584197998047,
+            "min_latency_us": 3553.600072860718,
+            "sm_count": 30,
+            "src": 2,
+            "start_us": 1000.0,
+            "type": "CE"
+        },
+        {
+            "avg_bandwidth_GBs": 55.812279402560804,
+            "avg_latency_us": 4809.612846374512,
+            "buffer_size": 268435456,
+            "bytes_per_iter": 268435456,
+            "dst": 0,
+            "gap_us": 0.0,
+            "iov_size": 1,
+            "iterations": [
+                {
+                    "bandwidth_GBs": 53.704965949294575,
+                    "latency_us": 4998.335838317871,
+                    "launch_us": 0.5
+                },
+                {
+                    "bandwidth_GBs": 54.18542142259598,
+                    "latency_us": 4954.016208648682,
+                    "launch_us": 5027.25
+                },
+                {
+                    "bandwidth_GBs": 54.41070896220294,
+                    "latency_us": 4933.504104614258,
+                    "launch_us": 9994.25
+                },
+                {
+                    "bandwidth_GBs": 54.33634401663245,
+                    "latency_us": 4940.256118774414,
+                    "launch_us": 14940.75
+                },
+                {
+                    "bandwidth_GBs": 52.66811120052917,
+                    "latency_us": 5096.735954284668,
+                    "launch_us": 19896.75
+                },
+                {
+                    "bandwidth_GBs": 53.08472825193253,
+                    "latency_us": 5056.735992431641,
+                    "launch_us": 25005.25
+                },
+                {
+                    "bandwidth_GBs": 54.97409966501997,
+                    "latency_us": 4882.944107055664,
+                    "launch_us": 30075.0
+                },
+                {
+                    "bandwidth_GBs": 55.80945863297023,
+                    "latency_us": 4809.855937957764,
+                    "launch_us": 34971.5
+                },
+                {
+                    "bandwidth_GBs": 54.22044520015018,
+                    "latency_us": 4950.8161544799805,
+                    "launch_us": 39796.75
+                },
+                {
+                    "bandwidth_GBs": 77.29369925125707,
+                    "latency_us": 3472.928047180176,
+                    "launch_us": 44768.5
+                }
+            ],
+            "iters_completed": 10,
+            "max_latency_us": 5096.735954284668,
+            "min_latency_us": 3472.928047180176,
+            "sm_count": 30,
+            "src": 3,
+            "start_us": 1000.0,
+            "type": "CE"
+        },
+        {
+            "avg_bandwidth_GBs": 55.38058545112521,
+            "avg_latency_us": 4847.103977203369,
+            "buffer_size": 268435456,
+            "bytes_per_iter": 268435456,
+            "dst": 0,
+            "gap_us": 0.0,
+            "iov_size": 1,
+            "iterations": [
+                {
+                    "bandwidth_GBs": 53.76072036041336,
+                    "latency_us": 4993.152141571045,
+                    "launch_us": 0.5
+                },
+                {
+                    "bandwidth_GBs": 53.32499066457958,
+                    "latency_us": 5033.952236175537,
+                    "launch_us": 5031.5
+                },
+                {
+                    "bandwidth_GBs": 53.4347101181033,
+                    "latency_us": 5023.615837097168,
+                    "launch_us": 10083.0
+                },
+                {
+                    "bandwidth_GBs": 53.68296991639417,
+                    "latency_us": 5000.3838539123535,
+                    "launch_us": 15119.5
+                },
+                {
+                    "bandwidth_GBs": 54.45697970037796,
+                    "latency_us": 4929.312229156494,
+                    "launch_us": 20136.0
+                },
+                {
+                    "bandwidth_GBs": 52.210495207365696,
+                    "latency_us": 5141.4079666137695,
+                    "launch_us": 25085.25
+                },
+                {
+                    "bandwidth_GBs": 53.02868800179203,
+                    "latency_us": 5062.079906463623,
+                    "launch_us": 30245.5
+                },
+                {
+                    "bandwidth_GBs": 50.865945783765454,
+                    "latency_us": 5277.3118019104,
+                    "launch_us": 35320.75
+                },
+                {
+                    "bandwidth_GBs": 52.03431625509952,
+                    "latency_us": 5158.815860748291,
+                    "launch_us": 40612.0
+                },
+                {
+                    "bandwidth_GBs": 94.15458034538435,
+                    "latency_us": 2851.0079383850098,
+                    "launch_us": 45784.5
+                }
+            ],
+            "iters_completed": 10,
+            "max_latency_us": 5277.3118019104,
+            "min_latency_us": 2851.0079383850098,
+            "sm_count": 30,
+            "src": 4,
+            "start_us": 1000.0,
+            "type": "CE"
+        },
+        {
+            "avg_bandwidth_GBs": 57.47381489625151,
+            "avg_latency_us": 4670.569658279419,
+            "buffer_size": 268435456,
+            "bytes_per_iter": 268435456,
+            "dst": 0,
+            "gap_us": 0.0,
+            "iov_size": 1,
+            "iterations": [
+                {
+                    "bandwidth_GBs": 54.00229030560359,
+                    "latency_us": 4970.816135406494,
+                    "launch_us": 0.5
+                },
+                {
+                    "bandwidth_GBs": 62.61837408909552,
+                    "latency_us": 4286.848068237305,
+                    "launch_us": 4996.0
+                },
+                {
+                    "bandwidth_GBs": 58.30402373105101,
+                    "latency_us": 4604.063987731934,
+                    "launch_us": 9300.5
+                },
+                {
+                    "bandwidth_GBs": 57.21950228444138,
+                    "latency_us": 4691.328048706055,
+                    "launch_us": 13920.5
+                },
+                {
+                    "bandwidth_GBs": 55.80834656012689,
+                    "latency_us": 4809.9517822265625,
+                    "launch_us": 18627.25
+                },
+                {
+                    "bandwidth_GBs": 57.53740042960772,
+                    "latency_us": 4665.408134460449,
+                    "launch_us": 23450.75
+                },
+                {
+                    "bandwidth_GBs": 57.90238286106934,
+                    "latency_us": 4636.000156402588,
+                    "launch_us": 28131.5
+                },
+                {
+                    "bandwidth_GBs": 56.541107474747285,
+                    "latency_us": 4747.615814208984,
+                    "launch_us": 32784.0
+                },
+                {
+                    "bandwidth_GBs": 56.603672147452905,
+                    "latency_us": 4742.368221282959,
+                    "launch_us": 37547.25
+                },
+                {
+                    "bandwidth_GBs": 58.98000090325079,
+                    "latency_us": 4551.296234130859,
+                    "launch_us": 42302.0
+                }
+            ],
+            "iters_completed": 10,
+            "max_latency_us": 4970.816135406494,
+            "min_latency_us": 4286.848068237305,
+            "sm_count": 30,
+            "src": 5,
+            "start_us": 1000.0,
+            "type": "CE"
+        },
+        {
+            "avg_bandwidth_GBs": 57.85410444575784,
+            "avg_latency_us": 4639.8688316345215,
+            "buffer_size": 268435456,
+            "bytes_per_iter": 268435456,
+            "dst": 0,
+            "gap_us": 0.0,
+            "iov_size": 1,
+            "iterations": [
+                {
+                    "bandwidth_GBs": 53.72216049288614,
+                    "latency_us": 4996.7360496521,
+                    "launch_us": 0.5
+                },
+                {
+                    "bandwidth_GBs": 61.31351246907635,
+                    "latency_us": 4378.079891204834,
+                    "launch_us": 5030.75
+                },
+                {
+                    "bandwidth_GBs": 62.13967961567905,
+                    "latency_us": 4319.87190246582,
+                    "launch_us": 9434.0
+                },
+                {
+                    "bandwidth_GBs": 58.07153723054934,
+                    "latency_us": 4622.496128082275,
+                    "launch_us": 13769.5
+                },
+                {
+                    "bandwidth_GBs": 61.73450262310653,
+                    "latency_us": 4348.22416305542,
+                    "launch_us": 18408.0
+                },
+                {
+                    "bandwidth_GBs": 54.95933510878298,
+                    "latency_us": 4884.255886077881,
+                    "launch_us": 22770.5
+                },
+                {
+                    "bandwidth_GBs": 55.72566847756333,
+                    "latency_us": 4817.0881271362305,
+                    "launch_us": 27666.5
+                },
+                {
+                    "bandwidth_GBs": 57.00602580134884,
+                    "latency_us": 4708.896160125732,
+                    "launch_us": 32498.25
+                },
+                {
+                    "bandwidth_GBs": 56.162183011745036,
+                    "latency_us": 4779.6478271484375,
+                    "launch_us": 37222.5
+                },
+                {
+                    "bandwidth_GBs": 59.08260728605914,
+                    "latency_us": 4543.392181396484,
+                    "launch_us": 42022.25
+                }
+            ],
+            "iters_completed": 10,
+            "max_latency_us": 4996.7360496521,
+            "min_latency_us": 4319.87190246582,
+            "sm_count": 30,
+            "src": 6,
+            "start_us": 1000.0,
+            "type": "CE"
+        },
+        {
+            "avg_bandwidth_GBs": 55.105009549045754,
+            "avg_latency_us": 4871.343970298767,
+            "buffer_size": 268435456,
+            "bytes_per_iter": 268435456,
+            "dst": 0,
+            "gap_us": 0.0,
+            "iov_size": 1,
+            "iterations": [
+                {
+                    "bandwidth_GBs": 56.08070535888437,
+                    "latency_us": 4786.59200668335,
+                    "launch_us": 0.75
+                },
+                {
+                    "bandwidth_GBs": 43.092975382944374,
+                    "latency_us": 6229.2160987854,
+                    "launch_us": 4975.0
+                },
+                {
+                    "bandwidth_GBs": 44.43895359942229,
+                    "latency_us": 6040.544033050537,
+                    "launch_us": 11223.5
+                },
+                {
+                    "bandwidth_GBs": 54.6795482369729,
+                    "latency_us": 4909.247875213623,
+                    "launch_us": 17279.0
+                },
+                {
+                    "bandwidth_GBs": 53.8670511331135,
+                    "latency_us": 4983.295917510986,
+                    "launch_us": 22200.25
+                },
+                {
+                    "bandwidth_GBs": 53.53120594480395,
+                    "latency_us": 5014.560222625732,
+                    "launch_us": 27196.0
+                },
+                {
+                    "bandwidth_GBs": 54.53841656748402,
+                    "latency_us": 4921.951770782471,
+                    "launch_us": 32224.25
+                },
+                {
+                    "bandwidth_GBs": 53.90755377290301,
+                    "latency_us": 4979.551792144775,
+                    "launch_us": 37158.75
+                },
+                {
+                    "bandwidth_GBs": 55.41351046574835,
+                    "latency_us": 4844.223976135254,
+                    "launch_us": 42151.75
+                },
+                {
+                    "bandwidth_GBs": 133.93271850164547,
+                    "latency_us": 2004.256010055542,
+                    "launch_us": 47009.75
+                }
+            ],
+            "iters_completed": 10,
+            "max_latency_us": 6229.2160987854,
+            "min_latency_us": 2004.256010055542,
+            "sm_count": 30,
+            "src": 7,
+            "start_us": 1000.0,
+            "type": "CE"
+        },
+        {
+            "avg_bandwidth_GBs": 160.8544533780247,
+            "avg_latency_us": 1668.8095999999998,
+            "buffer_size": 268435456,
+            "bytes_per_iter": 268435456,
+            "dst": 1,
+            "gap_us": 0.0,
+            "iov_size": 1,
+            "iterations": [
+                {
+                    "bandwidth_GBs": 52.876931998688896,
+                    "latency_us": 5076.608,
+                    "launch_us": 0.0
+                },
+                {
+                    "bandwidth_GBs": 208.926502453239,
+                    "latency_us": 1284.832,
+                    "launch_us": 5076.75
+                },
+                {
+                    "bandwidth_GBs": 208.58363378670714,
+                    "latency_us": 1286.944,
+                    "launch_us": 6361.75
+                },
+                {
+                    "bandwidth_GBs": 212.47202451812262,
+                    "latency_us": 1263.392,
+                    "launch_us": 7648.75
+                },
+                {
+                    "bandwidth_GBs": 208.76012243983777,
+                    "latency_us": 1285.856,
+                    "launch_us": 8912.25
+                },
+                {
+                    "bandwidth_GBs": 224.63669228503332,
+                    "latency_us": 1194.976,
+                    "launch_us": 10198.0
+                },
+                {
+                    "bandwidth_GBs": 208.88488259169802,
+                    "latency_us": 1285.088,
+                    "launch_us": 11393.25
+                },
+                {
+                    "bandwidth_GBs": 205.0503055487656,
+                    "latency_us": 1309.12,
+                    "launch_us": 12678.25
+                },
+                {
+                    "bandwidth_GBs": 197.77922384118452,
+                    "latency_us": 1357.248,
+                    "launch_us": 13987.5
+                },
+                {
+                    "bandwidth_GBs": 199.72400657127213,
+                    "latency_us": 1344.032,
+                    "launch_us": 15344.75
+                }
+            ],
+            "iters_completed": 10,
+            "max_latency_us": 5076.608,
+            "min_latency_us": 1194.976,
+            "sm_count": 80,
+            "src": 7,
+            "start_us": 1000.0,
+            "type": "SM_SPACED"
+        }
+    ]
+}
