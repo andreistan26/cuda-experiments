@@ -1,0 +1,100 @@
+Bootstrap: docker
+From: nvidia/cuda:12.8.1-devel-ubuntu22.04
+
+%files
+	./pmi2-src /opt/slurm-pmi2-src
+
+%environment
+    export DEBIAN_FRONTEND=noninteractive
+    export PATH=/opt/ompi-pmi2/bin:/usr/local/bin:$PATH
+    export LD_LIBRARY_PATH=/opt/ompi-pmi2/lib:/opt/slurm-pmi2/lib:$LD_LIBRARY_PATH
+
+%post -c /bin/bash
+    PY_VER=3.13
+	OMPI_VER=4.1.6
+    
+    export DEBIAN_FRONTEND=noninteractive
+    
+    rm -f /etc/apt/sources.list.d/cuda*.list /etc/apt/sources.list.d/nvidia-ml.list || true
+    
+	# Install deps
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        software-properties-common \
+        build-essential cmake git ninja-build g++ make patchelf \
+        rdma-core libibverbs-dev \
+        libgoogle-glog-dev libgflags-dev libgtest-dev libelf-dev \
+        libnuma-dev libdrm-dev libdrm-amdgpu1 \
+        pkg-config zlib1g-dev curl openssh-client iproute2 wget
+
+	mkdir -p /opt/slurm-pmi2/include/slurm /opt/slurm-pmi2/lib
+	install -m 0644 /opt/slurm-pmi2-src/pmi2.h /opt/slurm-pmi2/include/pmi2.h
+    install -m 0644 /opt/slurm-pmi2-src/slurm/pmi2.h /opt/slurm-pmi2/include/slurm/pmi2.h
+	gcc -fPIC -O2 -shared \
+        -I/opt/slurm-pmi2/include -I/opt/slurm-pmi2/include/slurm \
+        /opt/slurm-pmi2-src/pmi2_api.c /opt/slurm-pmi2-src/pmi2_util.c \
+        -o /opt/slurm-pmi2/lib/libpmi2.so 
+
+	ln -sf libpmi2.so /opt/slurm-pmi2/lib/libpmi2.so.0
+
+    apt-get update && apt-get install -y --no-install-recommends \
+        autoconf automake libtool flex bison
+
+	# Compile OpenMPI
+    pushd /tmp
+    curl -L -o openmpi-${OMPI_VER}.tar.gz \
+        https://download.open-mpi.org/release/open-mpi/v4.1/openmpi-${OMPI_VER}.tar.gz
+    tar xf openmpi-${OMPI_VER}.tar.gz
+    pushd openmpi-${OMPI_VER}
+
+    ./configure --prefix=/opt/ompi-pmi2 \
+        --with-pmi=/opt/slurm-pmi2 \
+		CPPFLAGS="-I/opt/slurm-pmi2/include" \
+		LDFLAGS="-L/opt/slurm-pmi2/lib -Wl,-rpath,/opt/slurm-pmi2/lib" \
+        --disable-mpi-fortran
+
+    make -j"$(nproc)"
+    make install
+
+    # Make dynamic linker aware of the libs
+    echo "/opt/ompi-pmi2/lib" > /etc/ld.so.conf.d/ompi.conf
+    echo "/opt/slurm-pmi2/lib" > /etc/ld.so.conf.d/pmi2.conf
+    ldconfig
+	popd
+    rm -rf /tmp/openmpi-${OMPI_VER} /tmp/openmpi-${OMPI_VER}.tar.gz
+
+	popd
+	
+	# Get python 
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python${PY_VER} python${PY_VER}-dev python${PY_VER}-venv python3-setuptools python3-distutils && \
+    \
+    curl -sS https://bootstrap.pypa.io/get-pip.py | python${PY_VER} && \
+    ln -sf /usr/bin/pip${PY_VER} /usr/local/bin/pip && \
+    ln -sf /usr/bin/python${PY_VER} /usr/local/bin/python${PY_VER} && \
+    \
+
+	# Nsight systems for profiling cuda
+	wget https://developer.nvidia.com/downloads/assets/tools/secure/nsight-systems/2026_1/NsightSystems-linux-cli-public-2026.1.1.204-3717666.deb
+	dpkg -i NsightSystems-linux-cli-public-2026.1.1.204-3717666.deb
+
+    rm -rf /var/lib/apt/lists/*
+    
+	# Get torch
+    python${PY_VER} -m pip install --no-cache-dir build auditwheel pybind11
+    
+    python${PY_VER} -m pip install --no-cache-dir torch torchvision torchaudio \
+        --index-url https://download.pytorch.org/whl/cu128
+    
+    python${PY_VER} -m pip install --no-cache-dir --upgrade setuptools
+    
+    ln -sf /usr/bin/python${PY_VER} /usr/local/bin/python3 && \
+    ln -sf /usr/bin/python${PY_VER}-config /usr/local/bin/python3-config
+
+%runscript
+    exec /bin/bash "$@"
+
+%startscript
+    exec /bin/bash "$@"
